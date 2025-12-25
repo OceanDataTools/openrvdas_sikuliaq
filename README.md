@@ -1,9 +1,12 @@
 # OpenRVDAS Sikuliaq Code/Configs/Data
 
-This repository contains code, configs and data related to running OpenRVDAS on the
-R/V Sikuliaq. To be properly incorporated, it should be checked out inside an existing
-OpenRVDAS repository in local/sikuliaq:
+This repository contains code, configs and data related to running OpenRVDAS on the R/V Sikuliaq. Assuming your OpenRVDAS installation is in `/opt/openrvdas`, this repository should be cloned into `/opt` and symlinked as `/opt/openrvdas/local/sikuliaq`:
+
 ```
-cd local/
-git clone https://github.com/oceandatatools/openrvdas_sikuliaq sikuliaq
+cd /opt
+
+sudo git clone https://github.com/oceandatatools/openrvdas_sikuliaq
+sudo chown -R rvdas /opt/openrvdas_sikuliaq
+
+ln -s /opt/openrvdas_sikuliaq /opt/openrvdas/local/sikuliaq
 ```
