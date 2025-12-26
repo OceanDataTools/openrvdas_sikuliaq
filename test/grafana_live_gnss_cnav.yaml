@@ -1,0 +1,42 @@
+# Sample logger for writing to Grafana Live
+  readers:
+    class: UDPReader
+    kwargs:
+      port: 53121
+  transforms:
+    - class: RegexTransform
+      module: local.sikuliaq.coriolix.logger.transforms.regex_transform
+      kwargs:
+        record_format: ^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)
+        return_das_record: true
+        field_patterns:
+          zda: '^\WGPZDA,(?P<utc_time>\d+\.\d+),(?P<day>\d{2}),(?P<month>\d{2}),(?P<year>\d{4}),(?P<tzoffset_hours>\d{0,2}),(?P<tzoffset_mins>\d{0,2})\*(?P<checksum>[0-9A-F]{2})$'
+          gga: '^\WGPGGA,(?P<utc_position_fix>\d+\.\d+),(?P<latitude>\d+\.\d+),(?P<latitude_dir>[NS]),(?P<longitude>\d+\.\d+),(?P<longitude_dir>[EW]),(?P<gps_quality_indicator>\d+),(?P<num_sat_vis>\d+),(?P<hdop>\d+\.\d+),(?P<ortho_height>\-?\d+\.\d+),M,(?P<geoid_separation>\-?\d+\.\d+),M,(?P<age>[\d\.]*),\d{4}\*(?P<checksum>[0-9A-F]{2})$'
+          vtg: '^\WGPVTG,(?P<cog_true>\d+\.\d+)?,T,(?P<cog_magnetic>\d+\.\d+)?,M,(?P<sog_knots>\d+\.\d+)?,N,(?P<sog_kmhr>\d+\.\d+)?,K,?\w*\*(?P<checksum>[0-9A-F]{2})$'
+          rmc: '^\WGPRMC,(?P<utc_position_fix_rmc>\d+\.\d+),(?P<status_rmc>[AV]),(?P<latitude_rmc>\d+\.\d+),(?P<latitude_dir_rmc>[NS]),(?P<longitude_rmc>\d+\.\d+),(?P<longitude_dir_rmc>[EW]),(?P<sog_knots_rmc>\d+\.\d+)?,(?P<cog_true_rmc>\d+\.\d+)?,(?P<day_rmc>\d{2})(?P<month_rmc>\d{2})\d(?P<year_rmc>\d{2}),,(?P<mode_rmc>[ADE]),\w*\*(?P<checksum>[0-9A-F]{2})$'
+
+        ## Old format lost message type
+        #field_patterns:
+        #  - '^\WGPZDA,(?P<utc_time>\d+\.\d+),(?P<day>\d{2}),(?P<month>\d{2}),(?P<year>\d{4}),(?P<tzoffset_hours>\d{0,2}),(?P<tzoffset_mins>\d{0,2})\*(?P<checksum>[0-9A-F]{2})$'
+        #  - '^\WGPGGA,(?P<utc_position_fix>\d+\.\d+),(?P<latitude>\d+\.\d+),(?P<latitude_dir>[NS]),(?P<longitude>\d+\.\d+),(?P<longitude_dir>[EW]),(?P<gps_quality_indicator>\d+),(?P<num_sat_vis>\d+),(?P<hdop>\d+\.\d+),(?P<ortho_height>\-?\d+\.\d+),M,(?P<geoid_separation>\-?\d+\.\d+),M,(?P<age>[\d\.]*),\d{4}\*(?P<checksum>[0-9A-F]{2})$'
+        #  - '^\WGPVTG,(?P<cog_true>\d+\.\d+)?,T,(?P<cog_magnetic>\d+\.\d+)?,M,(?P<sog_knots>\d+\.\d+)?,N,(?P<sog_kmhr>\d+\.\d+)?,K,?\w*\*(?P<checksum>[0-9A-F]{2})$'
+        #  - '^\WGPRMC,(?P<utc_position_fix_rmc>\d+\.\d+),(?P<status_rmc>[AV]),(?P<latitude_rmc>\d+\.\d+),(?P<latitude_dir_rmc>[NS]),(?P<longitude_rmc>\d+\.\d+),(?P<longitude_dir_rmc>[EW]),(?P<sog_knots_rmc>\d+\.\d+)?,(?P<cog_true_rmc>\d+\.\d+)?,(?P<day_rmc>\d{2})(?P<month_rmc>\d{2})\d(?P<year_rmc>\d{2}),,(?P<mode_rmc>[ADE]),\w*\*(?P<checksum>[0-9A-F]{2})$'
+
+
+    # Convert numeric strings to numbers, combine and normalize lat/lon values and hemispheres
+    - class: NormalizeCoriolixTransform
+      module: local.sikuliaq.logger.transforms.normalize_coriolix_transform
+      kwargs:
+        skip_fields: ['checksum']  # Don't try to normalize checksum
+        lat_lon_map:
+          latitude_norm: ['latitude', 'latitude_dir']
+          longitude_norm: ['longitude', 'longitude_dir']
+
+  writers:
+    - class: TextFileWriter
+    - class: GrafanaLiveWriter
+      module: local.sikuliaq.logger.writers.grafana_live_writer
+      kwargs:
+        host: 'shp-openrvdas-test:3000'  # or 'wss://...' for SSL
+        stream_id: 'openrvdas/gnss_cnav'
+        api_token: 'glsa_rBxvFGOPZBCQmfGakSBKCWlcaxXzoPFq_02713982'
