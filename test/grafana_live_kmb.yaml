@@ -1,0 +1,19 @@
+# Sample logger for writing to Grafana Live
+  readers:
+    class: UDPReader
+    kwargs:
+      port: 6224
+      encoding: null
+
+  transforms:
+    - class: ParseKongsbergKMBTransform
+      module: local.sikuliaq.logger.transforms.parse_kongsberg_kmb_transform
+
+  writers:
+    - class: TextFileWriter
+    - class: GrafanaLiveWriter
+      module: local.sikuliaq.logger.writers.grafana_live_writer
+      kwargs:
+        host: 'shp-openrvdas-test:3000'  # or 'wss://...' for SSL
+        stream_id: 'openrvdas/kmb'
+        api_token: 'glsa_rBxvFGOPZBCQmfGakSBKCWlcaxXzoPFq_02713982'
