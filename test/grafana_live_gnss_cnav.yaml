@@ -39,4 +39,7 @@
       kwargs:
         host: 'shp-openrvdas-test:3000'  # or 'wss://...' for SSL
         stream_id: 'openrvdas/gnss_cnav'
-        api_token: 'glsa_rBxvFGOPZBCQmfGakSBKCWlcaxXzoPFq_02713982'
+        # Three ways to specify token:
+        # explicitly via api_token arg (least secure), as GRAFANA_API_TOKEN
+        # env variable (better), or via token_file arg (best)
+        token_file: '/opt/openrvdas/grafana_token.txt'
