@@ -1,0 +1,48 @@
+# Sample logger for writing to Grafana Live
+  readers:
+    class: UDPReader
+    kwargs:
+      port: 3010 # direct high rate; CORIOLIX port 53123
+
+  transforms:
+    # Get things timestamped and in shape to parse
+    - class: SplitTransform  # Because high rate sends all messages concatenated
+    - class: TimestampTransform
+    - class: PrefixTransform
+      kwargs:
+        prefix: gyro_mgc_2
+
+    # Do the actual parse
+    - class: RegexTransform
+      module: local.sikuliaq.coriolix.logger.transforms.regex_transform
+      kwargs:
+        record_format: ^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)
+        return_das_record: true
+        field_patterns:
+          hdt: '^\WMGHDT,(?P<heading>\d+\.\d+),T\*(?P<checksum>[0-9A-F]{2})$'
+          hcr: '^\WMGHCR'
+          ths: '^\WMGTHS,(?P<heading_true_actual>\d+\.\d+),(?P<heading_status>[AEMSV])\*(?P<checksum>[0-9A-F]{2})$'
+          rot: '^\WMGROT,(?P<rate_of_turn>\d+\.\d+),(?P<rot_status>[AV])\*(?P<checksum>[0-9A-F]{2})$'
+          psxn20: '^\WPSXN,20,(?P<horiz_qual>\d*),(?P<hgt_qual>\d*),(?P<head_qual>\d*),(?P<rp_qual>\d*)\*(?P<checksum>[0-9A-F]{2})$'
+          psxn23: '^\WPSXN,23,(?P<roll>\-?\d+\.\d+)?,(?P<pitch>\-?\d+\.\d+)?,(?P<head>\-?\d+\.\d+)?,(?P<heave>\-?\d+\.\d+)?\*(?P<checksum>[0-9A-F]{2})$'
+
+    # Convert numeric strings to numbers, combine and normalize lat/lon values and hemispheres
+    - class: NormalizeCoriolixTransform
+      module: local.sikuliaq.logger.transforms.normalize_coriolix_transform
+      kwargs:
+        skip_fields: ['checksum']  # Don't try to normalize checksum
+        #lat_lon_map:
+        #  latitude_norm: ['latitude', 'latitude_dir']
+        #  longitude_norm: ['longitude', 'longitude_dir']
+
+  writers:
+    #- class: TextFileWriter
+    - class: GrafanaLiveWriter
+      module: local.sikuliaq.logger.writers.grafana_live_writer
+      kwargs:
+        host: 'shp-openrvdas-test:3000'  # or 'wss://...' for SSL
+        stream_id: 'openrvdas/gyro_mgc_2'
+        # Three ways to specify token:
+        # explicitly via api_token arg (least secure), as GRAFANA_API_TOKEN
+        # env variable (better), or via token_file arg (best)
+        token_file: '/opt/openrvdas/grafana_token.txt'
