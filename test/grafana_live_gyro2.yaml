@@ -26,19 +26,16 @@
           psxn20: '^\WPSXN,20,(?P<horiz_qual>\d*),(?P<hgt_qual>\d*),(?P<head_qual>\d*),(?P<rp_qual>\d*)\*(?P<checksum>[0-9A-F]{2})$'
           psxn23: '^\WPSXN,23,(?P<roll>\-?\d+\.\d+)?,(?P<pitch>\-?\d+\.\d+)?,(?P<head>\-?\d+\.\d+)?,(?P<heave>\-?\d+\.\d+)?\*(?P<checksum>[0-9A-F]{2})$'
 
-    # Convert numeric strings to numbers, combine and normalize lat/lon values and hemispheres
+    # Convert numeric strings to numbers
     - class: NormalizeCoriolixTransform
       module: local.sikuliaq.logger.transforms.normalize_coriolix_transform
       kwargs:
         skip_fields: ['checksum']  # Don't try to normalize checksum
-        #lat_lon_map:
-        #  latitude_norm: ['latitude', 'latitude_dir']
-        #  longitude_norm: ['longitude', 'longitude_dir']
 
   writers:
-    #- class: TextFileWriter
+    - class: TextFileWriter
     - class: GrafanaLiveWriter
-      module: local.sikuliaq.logger.writers.grafana_live_writer
+      module: logger.writers.grafana_live_writer
       kwargs:
         host: 'shp-openrvdas-test:3000'  # or 'wss://...' for SSL
         stream_id: 'openrvdas/gyro_mgc_2'

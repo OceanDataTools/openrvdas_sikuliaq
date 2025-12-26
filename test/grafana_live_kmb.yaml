@@ -12,7 +12,7 @@
   writers:
     - class: TextFileWriter
     - class: GrafanaLiveWriter
-      module: local.sikuliaq.logger.writers.grafana_live_writer
+      module: logger.writers.grafana_live_writer
       kwargs:
         host: 'shp-openrvdas-test:3000'  # or 'wss://...' for SSL
         stream_id: 'openrvdas/kmb'
