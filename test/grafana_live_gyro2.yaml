@@ -27,11 +27,21 @@
           psxn23: '^\WPSXN,23,(?P<roll>\-?\d+\.\d+)?,(?P<pitch>\-?\d+\.\d+)?,(?P<head>\-?\d+\.\d+)?,(?P<heave>\-?\d+\.\d+)?\*(?P<checksum>[0-9A-F]{2})$'
 
     # Convert numeric strings to numbers
-    - class: NormalizeCoriolixTransform
-      module: local.sikuliaq.logger.transforms.normalize_coriolix_transform
+    - class: ConvertFieldsTransform
+      module: logger.transforms.convert_fields_transform
       kwargs:
-        skip_fields: ['checksum']  # Don't try to normalize checksum
-
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          heave: float
+          head: float
+          hgt_qual: int
+          horiz_qual: int
+          pitch: float
+          roll: float
+          rp_qual: int
+          head_qual: int
+          rate_of_turn: float
   writers:
     - class: TextFileWriter
     - class: GrafanaLiveWriter
