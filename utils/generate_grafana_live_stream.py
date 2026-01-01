@@ -1,26 +1,10 @@
 #!/usr/bin/env python3
 """
 Generates an OpenRVDAS logger configuration for Grafana Live streaming based on Coriolix sensor metadata.
-
-This script performs the following steps:
-1. Queries the Coriolix API for a specific `sensor_id` to retrieve configuration (ports, regex formats).
-2. Queries the API for parameter definitions to determine data types (float, int, string).
-3. Parses NMEA-style regex patterns to identify field names and message types.
-4. Automatically detects Latitude/Longitude and Direction field pairs (e.g., `latitude`, `latitude_dir`).
-5. Generates a YAML configuration file containing:
-    - A `UDPReader` listening on the sensor's transmit port.
-    - A `RegexTransform` populated with the sensor's parsing patterns.
-    - A `ConvertFieldsTransform` configured to cast types and convert Lat/Lon/Dir triplets into signed decimal degrees.
-    - A `TextFileWriter` for local logging.
-    - A `GrafanaLiveWriter` for streaming data to a Grafana dashboard.
+Also provides the CoriolixSensorConfig class for use by other scripts.
 
 Usage:
     ./generate_grafana_live_stream.py <sensor_id> [--grafana_url URL] [--api_url URL]
-
-Example:
-    ./generate_grafana_live_stream.py metsta155030
-    ./generate_grafana_live_stream.py metsta155030 --grafana_url http://192.168.1.50:3000
-    ./generate_grafana_live_stream.py metsta155030 --api_url http://localhost:8000/api
 """
 
 import argparse
@@ -31,339 +15,301 @@ import re
 import sys
 import urllib.error
 import urllib.request
+import urllib.parse
 import warnings
 import yaml
 
 
+# -----------------------------------------------------------------------------
+# YAML Formatting Helpers (Exported for reuse)
+# -----------------------------------------------------------------------------
 class QuotedString(str):
-    """
-    Custom string class to force specific quoting style in YAML output.
-    """
+    """Custom string class to force specific quoting style in YAML output."""
     pass
 
 
 class FlowList(list):
-    """
-    Custom list class to force flow style (inline list) in YAML output.
-    Example: [a, b] instead of
-    - a
-    - b
-    """
+    """Custom list class to force flow style (inline list) in YAML output."""
     pass
 
 
 def quoted_string_representer(dumper, data):
-    """
-    Representer to output QuotedString with single quotes.
-    """
     return dumper.represent_scalar('tag:yaml.org,2002:str', data, style="'")
 
 
 def flow_list_representer(dumper, data):
-    """
-    Representer to output FlowList in flow style.
-    """
     return dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
 
 
-# Register the custom representers with PyYAML
 yaml.add_representer(QuotedString, quoted_string_representer)
 yaml.add_representer(FlowList, flow_list_representer)
 
 
-def map_to_python_type(api_type):
+# -----------------------------------------------------------------------------
+# Reusable Configuration Class
+# -----------------------------------------------------------------------------
+class CoriolixSensorConfig:
     """
-    Maps API data types (e.g., 'ubyte', 'double') to Python type names.
+    Encapsulates logic for retrieving sensor metadata from Coriolix API
+    and generating OpenRVDAS configuration variables.
     """
-    mapping = {
-        'ubyte': 'int',
-        'byte': 'int',
-        'ushort': 'int',
-        'uint': 'int',
-        'short': 'int',
-        'int': 'int',
-        'long': 'int',
-        'float': 'float',
-        'double': 'float',
-        'char': 'str',
-        'string': 'str',
-        'text': 'str',
-        'bool': 'bool',
-        'boolean': 'bool'
-    }
-    return mapping.get(api_type.lower(), 'str')
 
+    def __init__(self, api_url=None):
+        self.api_url = api_url or 'https://coriolix.sikuliaq.alaska.edu/api'
 
-def extract_message_type(regex_str):
-    r"""
-    Attempts to extract an NMEA-style talker/message ID from the regex.
-    Assumes patterns start with ^\W or ^\$ followed by the ID.
-    Example: '^\WWIXDR...' -> 'WIXDR'
-    """
-    match = re.search(r'^\^\\W([A-Z0-9]+)', regex_str)
-    if match:
-        return match.group(1)
+    def _fetch_api_data(self, endpoint, params):
+        """Helper to fetch JSON data from the Coriolix API."""
+        base_url = self.api_url.rstrip('/')
+        query_string = urllib.parse.urlencode(params)
+        url = f'{base_url}/{endpoint}/?{query_string}'
 
-    match = re.search(r'^\^\\\$([A-Z0-9]+)', regex_str)
-    if match:
-        return match.group(1)
-
-    return 'unknown'
-
-
-def extract_regex_groups(regex_list):
-    """
-    Extracts all named capture groups (?P<name>...) from a list of regex strings.
-    Returns a set of field names.
-    """
-    field_names = set()
-    for pattern in regex_list:
-        # Find all occurrences of (?P<name>
-        matches = re.findall(r'\?P<([^>]+)>', pattern)
-        field_names.update(matches)
-    return field_names
-
-
-def fetch_api_data(base_url, endpoint, params):
-    """
-    Helper to fetch JSON data from the Coriolix API.
-    Handles HTTP errors and connection errors gracefully.
-    """
-    # Ensure base_url doesn't have trailing slash for consistency
-    base_url = base_url.rstrip('/')
-
-    query_string = urllib.parse.urlencode(params)
-    url = f'{base_url}/{endpoint}/?{query_string}'
-
-    try:
-        with urllib.request.urlopen(url) as response:
-            if response.status != 200:
-                sys.stderr.write(f"Error: API returned non-200 status {response.status} for URL: {url}\n")
-                return None
-            return json.loads(response.read().decode('utf-8'))
-
-    except urllib.error.HTTPError as e:
-        sys.stderr.write(f"HTTP Error {e.code}: Failed to retrieve data from {url}\n")
-        sys.stderr.write(f"Reason: {e.reason}\n")
-        return None
-
-    except urllib.error.URLError as e:
-        sys.stderr.write(f"Connection Error: Unable to reach API at {url}\n")
-        sys.stderr.write(f"Reason: {e.reason}\n")
-        sys.stderr.write("Please verify the --api_url parameter and your network connection.\n")
-        return None
-
-    except json.JSONDecodeError as e:
-        sys.stderr.write(f"Data Error: Failed to decode JSON response from {url}\n")
-        sys.stderr.write(f"Error details: {e}\n")
-        return None
-
-
-def generate_grafana_live_stream(sensor_id, grafana_url=None, api_url=None):
-    """
-    Generates a Grafana Live Writer configuration for OpenRVDAS based on
-    Coriolix sensor metadata. Returns a YAML string.
-    """
-    # Determine configuration values (defaults)
-    grafana_host = grafana_url if grafana_url else 'http://localhost:3000'
-    api_base_url = api_url if api_url else 'https://coriolix.sikuliaq.alaska.edu/api'
-
-    # 1. Fetch Sensor Info
-    sensor_resp = fetch_api_data(api_base_url, 'sensor', {'sensor_id': sensor_id, 'format': 'json'})
-    if not sensor_resp:
-        return None
-
-    # Handle object vs list response structure
-    sensor_list = sensor_resp.get('objects', []) if isinstance(sensor_resp, dict) else sensor_resp
-    sensor_info = next((s for s in sensor_list if s.get('sensor_id') == sensor_id), None)
-
-    if not sensor_info:
-        sys.stderr.write(f"Error: Sensor ID '{sensor_id}' not found in API response.\n")
-        return None
-
-    # Extract Sensor-Level Configs
-    transmit_port = sensor_info.get('transmit_port')
-
-    # Extract Regex Patterns
-    raw_regex = sensor_info.get('text_regex_format', [])
-    if isinstance(raw_regex, str):
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore', SyntaxWarning)
-                pattern_list = ast.literal_eval(raw_regex)
-        except (ValueError, SyntaxError):
-            pattern_list = [raw_regex]
-    else:
-        pattern_list = raw_regex
+            with urllib.request.urlopen(url) as response:
+                if response.status != 200:
+                    sys.stderr.write(f"Error: API status {response.status} for {url}\n")
+                    return None
+                return json.loads(response.read().decode('utf-8'))
+        except Exception as e:
+            sys.stderr.write(f"API Error fetching {url}: {e}\n")
+            return None
 
-    # Build field_patterns dict (keyed by Message Type) OR list
-    field_patterns_dict = {}
-    use_dict = True
+    def _map_to_python_type(self, api_type):
+        """Maps API data types to Python type names."""
+        mapping = {
+            'ubyte': 'int', 'byte': 'int', 'ushort': 'int', 'uint': 'int',
+            'short': 'int', 'int': 'int', 'long': 'int',
+            'float': 'float', 'double': 'float',
+            'char': 'str', 'string': 'str', 'text': 'str',
+            'bool': 'bool', 'boolean': 'bool'
+        }
+        return mapping.get(api_type.lower(), 'str')
 
-    if not pattern_list:
-        use_dict = False
+    def _extract_message_type(self, regex_str):
+        """Attempts to extract an NMEA-style talker/message ID from the regex."""
+        match = re.search(r'^\^\\W([A-Z0-9]+)', regex_str)
+        if match: return match.group(1)
+        match = re.search(r'^\^\\\$([A-Z0-9]+)', regex_str)
+        if match: return match.group(1)
+        return 'unknown'
 
-    for pattern in pattern_list:
-        msg_type = extract_message_type(pattern)
-        if msg_type == 'unknown':
-            use_dict = False
-            break
-        # Wrap regex in QuotedString to force single quotes in YAML
-        field_patterns_dict[msg_type] = QuotedString(pattern)
+    def _extract_regex_groups(self, regex_list):
+        """Extracts all named capture groups from regex strings."""
+        field_names = set()
+        for pattern in regex_list:
+            matches = re.findall(r'\?P<([^>]+)>', pattern)
+            field_names.update(matches)
+        return field_names
 
-    if use_dict:
-        field_patterns = field_patterns_dict
-    else:
-        # Wrap list items in QuotedString as well
-        field_patterns = [QuotedString(p) for p in pattern_list]
+    def get_active_sensor_ids(self):
+        """
+        Fetches list of all active sensors that have UDP ports and regex definitions.
+        """
+        params = {
+            'transmit_port__gt': '0',
+            'format': 'json',
+            'limit': '0'
+        }
+        sys.stderr.write(f"Fetching sensors from API: {self.api_url}/sensor/ ...\n")
 
-    # 2. Fetch Parameter Info (Data Types)
-    param_resp = fetch_api_data(api_base_url, 'parameter', {'sensor_id': sensor_id, 'format': 'json'})
-    if not param_resp:
-        return None
+        resp = self._fetch_api_data('sensor', params)
+        if not resp:
+            return []
 
-    param_list = param_resp.get('objects', []) if isinstance(param_resp, dict) else param_resp
+        objects = resp.get('objects', []) if isinstance(resp, dict) else resp
+        if not isinstance(objects, list):
+            return []
 
-    # Build fields and lat_lon_fields
-    fields_map = {}
-    lat_lon_fields = {}
+        active_sensors = []
+        for s in objects:
+            if not isinstance(s, dict): continue
 
-    # Gather field names from API parameters
-    api_param_names = set()
-    for obj in param_list:
-        name = obj.get('processing_symbol')
-        dtype = obj.get('data_type')
-        if name and dtype:
-            fields_map[name] = map_to_python_type(dtype)
-            api_param_names.add(name)
+            # Helper for loose boolean check
+            def is_true(val):
+                if isinstance(val, bool): return val
+                if isinstance(val, str): return val.lower() == 'true'
+                return False
 
-    # Gather field names from Regex patterns (in case API metadata is incomplete)
-    regex_field_names = extract_regex_groups(pattern_list)
+            # Must be enabled
+            if not is_true(s.get('enabled')): continue
 
-    # Combine all known fields to check for pairs
-    all_known_fields = api_param_names.union(regex_field_names)
+            # Must have regex
+            if not s.get('text_regex_format'): continue
 
-    # Detect Lat/Lon pairs (heuristic: name + name_dir)
-    # We iterate over the combined list of known fields
-    for name in list(all_known_fields):
-        if name.endswith('_dir'):
-            base_name = name[:-4]  # strip '_dir'
-            if base_name in all_known_fields:
-                # We found a pair!
-                # Store as FlowList [value_field, direction_field] for inline YAML style
-                lat_lon_fields[base_name] = FlowList([base_name, name])
+            if s.get('sensor_id'):
+                active_sensors.append(s.get('sensor_id'))
 
-                # REMOVE the base_name from the fields_map if it exists.
-                # ConvertFieldsTransform handles it in lat_lon_fields logic.
-                if base_name in fields_map:
-                    del fields_map[base_name]
+        sys.stderr.write(f"Found {len(active_sensors)} active sensors with parsing rules.\n")
+        return active_sensors
 
-                # REMOVE the direction field from simple conversions if it exists.
-                if name in fields_map:
-                    del fields_map[name]
+    def get_sensor_metadata(self, sensor_id):
+        """
+        Fetches metadata for a single sensor and returns the dictionary
+        of variables (kwargs) needed for OpenRVDAS configuration.
+        """
+        # 1. Fetch Sensor Info
+        sensor_resp = self._fetch_api_data('sensor', {'sensor_id': sensor_id, 'format': 'json'})
+        if not sensor_resp: return None
 
-    # Prepare ConvertFieldsTransform kwargs
-    convert_kwargs = {
-        'delete_source_fields': True,
-        'delete_unconverted_fields': True,
-        'fields': fields_map
-    }
-    # Only add lat_lon_fields if we actually found some
-    if lat_lon_fields:
-        convert_kwargs['lat_lon_fields'] = lat_lon_fields
+        sensor_list = (sensor_resp.get('objects', [])
+                       if isinstance(sensor_resp, dict) else sensor_resp)
+        sensor_info = next((s for s in sensor_list
+                            if s.get('sensor_id') == sensor_id), None)
 
-    # 3. Construct the Final Dictionary structure
-    logger_config = {
-        'readers': {
-            'class': 'UDPReader',
-            'kwargs': {
-                'port': transmit_port if transmit_port else 'UNKNOWN_PORT'
-            }
-        },
-        'transforms': [
-            {
-                'class': 'RegexTransform',
-                'module': 'local.sikuliaq.coriolix.logger.transforms.regex_transform',
-                'kwargs': {
-                    'record_format': QuotedString(r'^(?P<data_id>\w+)\s*'
-                                                  r'(?P<data_id_orig>[-\w]+)\s*'
-                                                  r'(?P<timestamp>[0-9TZ:\-\.]*)\s*'
-                                                  r'(?P<field_string>(.|\r|\n)*)'),
-                    'return_das_record': True,
-                    'field_patterns': field_patterns
-                }
-            },
-            {
-                'class': 'ConvertFieldsTransform',
-                'module': 'logger.transforms.convert_fields_transform',
-                'kwargs': convert_kwargs
-            }
-        ],
-        'writers': [
-            {
-                'class': 'TextFileWriter',
-            },
-            {
-                'class': 'GrafanaLiveWriter',
-                'module': 'logger.writers.grafana_live_writer',
-                'kwargs': {
-                    'host': grafana_host,
-                    'stream_id': f'openrvdas',
-                    'token_file': '/opt/openrvdas/grafana_token.txt'
-                }
-            }
-        ]
-    }
+        if not sensor_info:
+            sys.stderr.write(f"Warning: Sensor ID '{sensor_id}' not found.\n")
+            return None
 
-    # 4. Generate Output with Header
-    yaml_content = yaml.dump(logger_config, sort_keys=False, default_flow_style=False)
+        transmit_port = sensor_info.get('transmit_port')
+        if not transmit_port:
+            sys.stderr.write(f"Warning: Sensor '{sensor_id}' has no UDP port. Skipping.\n")
+            return None
 
-    cmd_line = " ".join(sys.argv)
-    # Use UTC timezone for the timestamp
-    date_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    header = f"""# Logger config for parsing records from {sensor_id} on UDP port {transmit_port}
-# and sending them to Grafana Live at {grafana_host}
-#
-# Generated by: {cmd_line}
-# API Source: {api_base_url}
-# Date: {date_str}
+        raw_regex = sensor_info.get('text_regex_format', [])
+        if not raw_regex:
+            sys.stderr.write(f"Warning: Sensor '{sensor_id}' has no regex format. Skipping.\n")
+            return None
 
-"""
+        if isinstance(raw_regex, str):
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore', SyntaxWarning)
+                    pattern_list = ast.literal_eval(raw_regex)
+            except (ValueError, SyntaxError):
+                pattern_list = [raw_regex]
+        else:
+            pattern_list = raw_regex
 
-    return header + yaml_content
+        # Build field_patterns
+        field_patterns_dict = {}
+        use_dict = True
+        for pattern in pattern_list:
+            msg_type = self._extract_message_type(pattern)
+            if msg_type == 'unknown':
+                use_dict = False
+                break
+            field_patterns_dict[msg_type] = QuotedString(pattern)
+
+        if use_dict:
+            field_patterns = field_patterns_dict
+        else:
+            field_patterns = [QuotedString(p) for p in pattern_list]
+
+        # 2. Fetch Parameter Info
+        param_resp = self._fetch_api_data('parameter', {'sensor_id': sensor_id, 'format': 'json'})
+        param_list = (param_resp.get('objects', [])
+                      if param_resp and isinstance(param_resp, dict)
+                      else (param_resp or []))
+
+        fields_map = {}
+        lat_lon_fields = {}
+        api_param_names = set()
+
+        for obj in param_list:
+            name = obj.get('processing_symbol')
+            dtype = obj.get('data_type')
+            if name and dtype:
+                fields_map[name] = self._map_to_python_type(dtype)
+                api_param_names.add(name)
+
+        regex_field_names = self._extract_regex_groups(pattern_list)
+        all_known_fields = api_param_names.union(regex_field_names)
+
+        # Detect Lat/Lon pairs
+        for name in list(all_known_fields):
+            if name.endswith('_dir'):
+                base_name = name[:-4]
+                if base_name in all_known_fields:
+                    lat_lon_fields[base_name] = FlowList([base_name, name])
+                    if base_name in fields_map: del fields_map[base_name]
+                    if name in fields_map: del fields_map[name]
+
+        # Construct kwargs
+        regex_kwargs = {
+            'record_format': QuotedString(r'^(?P<data_id>\w+)\s*'
+                                          r'(?P<data_id_orig>[-\w]+)\s*'
+                                          r'(?P<timestamp>[0-9TZ:\-\.]*)\s*'
+                                          r'(?P<field_string>(.|\r|\n)*)'),
+            'return_das_record': True,
+            'field_patterns': field_patterns
+        }
+
+        convert_kwargs = {
+            'delete_source_fields': True,
+            'delete_unconverted_fields': True,
+            'fields': fields_map
+        }
+        if lat_lon_fields:
+            convert_kwargs['lat_lon_fields'] = lat_lon_fields
+
+        return {
+            'sensor_id': sensor_id,
+            'reader_udp_port': transmit_port,
+            'regex_transform_kwargs': regex_kwargs,
+            'convert_fields_transform_kwargs': convert_kwargs
+        }
 
 
+# -----------------------------------------------------------------------------
+# Main Execution (Standalone Mode)
+# -----------------------------------------------------------------------------
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description="Generates an OpenRVDAS logger configuration for Grafana Live streaming."
     )
-
-    # Positional argument
-    parser.add_argument(
-        'sensor_id',
-        help="The Coriolix Sensor ID (e.g., metsta155030)"
-    )
-
-    # Optional named arguments
-    parser.add_argument(
-        '--grafana_url',
-        help="Full URL for Grafana Live (default: http://localhost:3000)",
-        default=None
-    )
-    parser.add_argument(
-        '--api_url',
-        help="Base URL for Coriolix API (default: https://coriolix.sikuliaq.alaska.edu/api)",
-        default=None
-    )
+    parser.add_argument('sensor_id', help="The Coriolix Sensor ID (e.g., metsta155030)")
+    parser.add_argument('--grafana_url', default='http://localhost:3000', help="Full URL for Grafana Live")
+    parser.add_argument('--api_url', default=None, help="Base URL for Coriolix API")
 
     args = parser.parse_args()
 
-    # Pass the arguments to the generator
-    yaml_output = generate_grafana_live_stream(
-        args.sensor_id,
-        grafana_url=args.grafana_url,
-        api_url=args.api_url
-    )
+    # Instantiate the shared class
+    config_gen = CoriolixSensorConfig(api_url=args.api_url)
 
-    if yaml_output:
-        print(yaml_output)
+    # Get metadata
+    meta = config_gen.get_sensor_metadata(args.sensor_id)
+
+    if meta:
+        # Construct specific logger config for this standalone script
+        logger_config = {
+            'readers': {
+                'class': 'UDPReader',
+                'kwargs': {'port': meta['reader_udp_port']}
+            },
+            'transforms': [
+                {
+                    'class': 'RegexTransform',
+                    'module': 'local.sikuliaq.coriolix.logger.transforms.regex_transform',
+                    'kwargs': meta['regex_transform_kwargs']
+                },
+                {
+                    'class': 'ConvertFieldsTransform',
+                    'module': 'logger.transforms.convert_fields_transform',
+                    'kwargs': meta['convert_fields_transform_kwargs']
+                }
+            ],
+            'writers': [
+                {'class': 'TextFileWriter'},
+                {
+                    'class': 'GrafanaLiveWriter',
+                    'module': 'logger.writers.grafana_live_writer',
+                    'kwargs': {
+                        'host': args.grafana_url,
+                        'stream_id': 'openrvdas',
+                        'token_file': '/opt/openrvdas/grafana_token.txt'
+                    }
+                }
+            ]
+        }
+
+        # Header
+        cmd_line = " ".join(sys.argv)
+        date_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        header = f"""# Logger config for parsing records from {args.sensor_id} on UDP port {meta['reader_udp_port']}
+# and sending them to Grafana Live at {args.grafana_url}
+#
+# Generated by: {cmd_line}
+# API Source: {config_gen.api_url}
+# Date: {date_str}
+
+"""
+        print(header + yaml.dump(logger_config, sort_keys=False, default_flow_style=False))
