@@ -103,6 +103,7 @@ class CoriolixSensorConfig:
     def get_active_sensor_ids(self):
         """
         Fetches list of all active sensors that have UDP ports and regex definitions.
+        RETURNS THE 'SLUG' IF AVAILABLE, otherwise the sensor_id.
         """
         params = {
             'transmit_port__gt': '0',
@@ -135,38 +136,67 @@ class CoriolixSensorConfig:
             # Must have regex
             if not s.get('text_regex_format'): continue
 
-            if s.get('sensor_id'):
-                active_sensors.append(s.get('sensor_id'))
+            # Prefer 'slug', fall back to 'sensor_id'
+            # Note: Checking 'slug', 'short_name', and 'code' just in case API naming varies
+            effective_id = s.get('slug') or s.get('short_name') or s.get('sensor_id')
+
+            if effective_id:
+                active_sensors.append(effective_id)
 
         sys.stderr.write(f"Found {len(active_sensors)} active sensors with parsing rules.\n")
         return active_sensors
 
-    def get_sensor_metadata(self, sensor_id):
+    def get_sensor_metadata(self, sensor_identifier):
         """
-        Fetches metadata for a single sensor and returns the dictionary
-        of variables (kwargs) needed for OpenRVDAS configuration.
+        Fetches metadata for a single sensor.
+        Smart Lookup: Tries to find the sensor by 'slug' first, then 'sensor_id'.
         """
-        # 1. Fetch Sensor Info
-        sensor_resp = self._fetch_api_data('sensor', {'sensor_id': sensor_id, 'format': 'json'})
-        if not sensor_resp: return None
+        sensor_info = None
 
-        sensor_list = (sensor_resp.get('objects', [])
-                       if isinstance(sensor_resp, dict) else sensor_resp)
-        sensor_info = next((s for s in sensor_list
-                            if s.get('sensor_id') == sensor_id), None)
+        # 1. Try lookup by slug (assuming the API supports filtering by slug)
+        # Many APIs might not index slug directly, so we might need to search the list or use specific param.
+        # We'll try the direct 'slug' parameter first.
+        slug_resp = self._fetch_api_data('sensor', {'slug': sensor_identifier, 'format': 'json'})
+        if slug_resp:
+            slug_list = (slug_resp.get('objects', []) if isinstance(slug_resp, dict) else slug_resp)
+            sensor_info = next((s for s in slug_list if s.get('slug') == sensor_identifier), None)
+
+        # 2. If not found, try lookup by sensor_id
+        if not sensor_info:
+            id_resp = self._fetch_api_data('sensor', {'sensor_id': sensor_identifier, 'format': 'json'})
+            if id_resp:
+                id_list = (id_resp.get('objects', []) if isinstance(id_resp, dict) else id_resp)
+                sensor_info = next((s for s in id_list if s.get('sensor_id') == sensor_identifier), None)
 
         if not sensor_info:
-            sys.stderr.write(f"Warning: Sensor ID '{sensor_id}' not found.\n")
+            # Last ditch: Fetch all and filter client-side (inefficient but robust if API filters are limited)
+            # Only do this if we haven't found it yet
+            sys.stderr.write(f"  ...Direct lookup failed for '{sensor_identifier}', trying brute force search...\n")
+            all_resp = self._fetch_api_data('sensor', {'transmit_port__gt': '0', 'limit': 0, 'format': 'json'})
+            if all_resp:
+                all_objs = all_resp.get('objects', [])
+                sensor_info = next((s for s in all_objs
+                                    if s.get('slug') == sensor_identifier or s.get('sensor_id') == sensor_identifier),
+                                   None)
+
+        if not sensor_info:
+            sys.stderr.write(f"Warning: Sensor '{sensor_identifier}' not found via slug or sensor_id.\n")
             return None
+
+        # Determine the "True" ID to use for the API calls for parameters (which likely need the DB id)
+        # But we want to return the configuration using the 'sensor_identifier' passed in (the slug).
+
+        # Use the hardware ID for parameter lookups
+        hardware_id = sensor_info.get('sensor_id')
 
         transmit_port = sensor_info.get('transmit_port')
         if not transmit_port:
-            sys.stderr.write(f"Warning: Sensor '{sensor_id}' has no UDP port. Skipping.\n")
+            sys.stderr.write(f"Warning: Sensor '{sensor_identifier}' has no UDP port. Skipping.\n")
             return None
 
         raw_regex = sensor_info.get('text_regex_format', [])
         if not raw_regex:
-            sys.stderr.write(f"Warning: Sensor '{sensor_id}' has no regex format. Skipping.\n")
+            sys.stderr.write(f"Warning: Sensor '{sensor_identifier}' has no regex format. Skipping.\n")
             return None
 
         if isinstance(raw_regex, str):
@@ -194,8 +224,8 @@ class CoriolixSensorConfig:
         else:
             field_patterns = [QuotedString(p) for p in pattern_list]
 
-        # 2. Fetch Parameter Info
-        param_resp = self._fetch_api_data('parameter', {'sensor_id': sensor_id, 'format': 'json'})
+        # 3. Fetch Parameter Info using the HARDWARE ID
+        param_resp = self._fetch_api_data('parameter', {'sensor_id': hardware_id, 'format': 'json'})
         param_list = (param_resp.get('objects', [])
                       if param_resp and isinstance(param_resp, dict)
                       else (param_resp or []))
@@ -242,7 +272,7 @@ class CoriolixSensorConfig:
             convert_kwargs['lat_lon_fields'] = lat_lon_fields
 
         return {
-            'sensor_id': sensor_id,
+            'sensor_id': sensor_identifier,  # Return the requested ID (e.g. slug) for naming
             'reader_udp_port': transmit_port,
             'regex_transform_kwargs': regex_kwargs,
             'convert_fields_transform_kwargs': convert_kwargs
@@ -256,7 +286,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description="Generates an OpenRVDAS logger configuration for Grafana Live streaming."
     )
-    parser.add_argument('sensor_id', help="The Coriolix Sensor ID (e.g., metsta155030)")
+    parser.add_argument('sensor_id', help="The Coriolix Sensor ID or Slug (e.g., metsta155030 or gnss_cnav)")
     parser.add_argument('--grafana_url', default='http://localhost:3000', help="Full URL for Grafana Live")
     parser.add_argument('--api_url', default=None, help="Base URL for Coriolix API")
 
