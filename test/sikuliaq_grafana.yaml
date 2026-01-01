@@ -1,0 +1,950 @@
+###########################################################
+# Auto-generated OpenRVDAS Cruise Config
+# Command: local/sikuliaq/utils/generate_grafana_cruise.py --cruise_id SKQ2025-22T --grafana_url http://shp-openrvdas-test:3000 --all_sensors
+# Cruise: SKQ2025-22T
+# Date: 2026-01-01T18:26:13.825205+00:00
+###########################################################
+cruise:
+  id: SKQ2025-22T
+  start: '2025-01-01'
+  end: '2025-12-31'
+variables:
+  grafana_host: http://shp-openrvdas-test:3000
+  grafana_token_file: /opt/openrvdas/grafana_token.txt
+  cruise_id: SKQ2025-22T
+  log_root: /var/tmp/log
+logger_templates:
+  grafana_live_stream_logger:
+    configs:
+      'off': {}
+      'on':
+        readers:
+        - class: UDPReader
+          kwargs:
+            port: <<reader_udp_port>>
+        transforms:
+        - class: RegexTransform
+          module: local.sikuliaq.coriolix.logger.transforms.regex_transform
+          kwargs: <<regex_transform_kwargs>>
+        - class: ConvertFieldsTransform
+          module: logger.transforms.convert_fields_transform
+          kwargs: <<convert_fields_transform_kwargs>>
+        writers:
+        - class: GrafanaLiveWriter
+          module: logger.writers.grafana_live_writer
+          kwargs:
+            host: <<grafana_host>>
+            stream_id: openrvdas
+            token_file: <<grafana_token_file>>
+loggers:
+  adcpwhdepth:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: adcpwhdepth
+      reader_udp_port: 55007
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          PMSG: '^\WPMSG,(?P<depth>\d+)\*(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          depth: int
+  adcpwhspeedl:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: adcpwhspeedl
+      reader_udp_port: 53135
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          VDVBW: '^\WVDVBW,(?P<long_water_speed>\-?\d+\.\d+),(?P<trans_water_speed>\-?\d+\.\d+),(?P<status_water_speed>\w),(?P<long_ground_speed>(\-?\d*\.\d*)?),(?P<trans_ground_speed>(\-?\d*\.\d*)?),(?P<status_ground_speed>\w*)\*(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          trans_water_speed: float
+          status_water_speed: str
+          long_ground_speed: float
+          long_water_speed: float
+          trans_ground_speed: float
+          status_ground_speed: str
+  aisnav000001:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: aisnav000001
+      reader_udp_port: 53134
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^.*(?P<vdo>!AIVDO,\d?,\d?,\d?,\w?,.*,\d.[A-F0-9]{2})$'
+        - '^.*(?P<vdm>!AIVDM,\d?,\d?,\d?,\w?,.*,\d.[A-F0-9]{2})$'
+        - '^.*(?P<alr>\$AIALR.*,\d?.[A-F0-9]{2})$'
+        - '^.*(?P<hbt>\$AIHBT.*,\d.[A-F0-9]{2})$'
+        - '^.*(?P<pfec>\$PFEC.*\d.[A-F0-9]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          vdo: str
+          vdm: str
+          alr: str
+          hbt: str
+          pfec: str
+  anemom000001:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: anemom000001
+      reader_udp_port: 53130
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          WIMWV: '^\WWIMWV,(?P<direction>\d+)?,R,(?P<speed>\d+\.\d+)?,N,(?P<status>[AV])\*(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          direction: int
+          speed: float
+          true_direction: float
+          true_speed: float
+          u: float
+          v: float
+  anemom000002:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: anemom000002
+      reader_udp_port: 53131
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          WIMWV: '^\WWIMWV,(?P<direction>\d+)?,R,(?P<speed>\d+\.\d+)?,N,(?P<status>[AV])\*(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          direction: int
+          speed: float
+          true_direction: float
+          u: float
+          v: float
+          true_speed: float
+  anemom000091:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: anemom000091
+      reader_udp_port: 54130
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          WIMWD: '^\WWIMWD,(?P<true_direction>\d+\.\d+)?,T,(?P<mag_direction>\d+\.\d+)?,M,(?P<true_speed_knots>\d+\.\d+)?,N,(?P<true_speed>\d+\.\d+)?,M\*(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          true_direction: float
+          true_speed: float
+  anemom000092:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: anemom000092
+      reader_udp_port: 54131
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          WIMWD: '^\WWIMWD,(?P<true_direction>\d+\.\d+)?,T,(?P<mag_direction>\d+\.\d+)?,M,(?P<true_speed_knots>\d+\.\d+)?,N,(?P<true_speed>\d+\.\d+)?,M\*(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          true_direction: float
+          true_speed: float
+  anemom098639:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: anemom098639
+      reader_udp_port: 53145
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<mode>\w):x\s+=\s+(?P<x_wind>\-?\d+)\s+y\s+=\s+(?P<y_wind>\-?\d+)\s+z\s+=\s+(?P<z_wind>\-?\d+)\s+t\s+=\s+(?P<acoustic_temp>\-?\d+)\s+dq=\s+(?P<data_quality>\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          x_wind: int
+          y_wind: int
+          z_wind: int
+          mode: str
+          acoustic_temp: float
+          data_quality: int
+          relative_wind_direction: float
+          relative_wind_speed: float
+          true_direction: float
+          true_speed: float
+  anemom351006:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: anemom351006
+      reader_udp_port: 53124
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^\W(?P<unit_id>\w+),(?P<direction>\d+),(?P<speed>\d+\.\d+),(?P<units>\w),(?P<heating_status>\d+),\W(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          u: float
+          direction: int
+          speed: float
+          true_speed: float
+          v: float
+          true_direction: float
+  anemom951005:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: anemom951005
+      reader_udp_port: 54124
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          WIMWD: '^\WWIMWD,(?P<true_direction>\d+\.\d+)?,T,(?P<mag_direction>\d+\.\d+)?,M,(?P<true_speed_knots>\d+\.\d+)?,N,(?P<true_speed>\d+\.\d+)?,M\*(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          true_direction: float
+          true_speed: float
+  flowme021463:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: flowme021463
+      reader_udp_port: 53129
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<flow_speed>\-?\d+\.\d+),(?P<volume_flow>\-?\d+\.\d+),(?P<coil_temperature>\-?\d+\.\d+),(?P<conductivity>\d+\.\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          flow_speed: float
+          coil_temperature: float
+          conductivity: float
+          volume_flow: float
+  flowme021464:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: flowme021464
+      reader_udp_port: 53116
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<flow_speed>\-?\d+\.\d+),(?P<volume_flow>\-?\d+\.\d+),(?P<coil_temperature>\-?\d+\.\d+),(?P<conductivity>\-?\d+\.\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          flow_speed: float
+          volume_flow: float
+          coil_temperature: float
+          conductivity: float
+  fluoro006922:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: fluoro006922
+      reader_udp_port: 53138
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^\d\d\W\d\d\W\d\d\s+\d\d:\d\d:\d\d\s+(?P<wavelength_1>\d+)\s+(?P<counts_1>\d+)\s+(?P<wavelength_2>\d+)\s+(?P<counts_2>\d+)\s+(?P<wavelength_3>\d+)\s+(?P<counts_3>\d+)\s+(?P<CPU_thermistor>\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          bbp650: float
+          counts_2: int
+          bb650: float
+          bcorr650: float
+          betap650: float
+          wavelength_3: int
+          counts_1: int
+          counts_3: int
+          beta650: float
+          chl: float
+          FDOM: float
+          wavelength_1: int
+          wavelength_2: int
+  fluoro006977:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: fluoro006977
+      reader_udp_port: 53139
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^\d\d\W\d\d\W\d\d\s+\d\d:\d\d:\d\d\s+(?P<wavelength_1>\d+)\s+(?P<counts_1>\d+)\s+(?P<wavelength_2>\d+)\s+(?P<counts_2>\d+)\s+(?P<wavelength_3>\d+)\s+(?P<counts_3>\d+)\s+(?P<CPU_thermistor>\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          counts_1: int
+          wavelength_1: int
+          chl: float
+          FDOM: float
+          wavelength_2: int
+          bbp650: float
+          counts_2: int
+          wavelength_3: int
+          counts_3: int
+          bcorr650: float
+          betap650: float
+          beta650: float
+          bb650: float
+  gnsspo000045:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: gnsspo000045
+      reader_udp_port: 53121
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          GPZDA: '^\WGPZDA,(?P<utc_time>\d+\.\d+),(?P<day>\d{2}),(?P<month>\d{2}),(?P<year>\d{4}),(?P<tzoffset_hours>\d{0,2}),(?P<tzoffset_mins>\d{0,2})\*(?P<checksum>[0-9A-F]{2})$'
+          GPGGA: '^\WGPGGA,(?P<utc_position_fix>\d+\.\d+),(?P<latitude>\d+\.\d+),(?P<latitude_dir>[NS]),(?P<longitude>\d+\.\d+),(?P<longitude_dir>[EW]),(?P<gps_quality_indicator>\d+),(?P<num_sat_vis>\d+),(?P<hdop>\d+\.\d+),(?P<ortho_height>\-?\d+\.\d+),M,(?P<geoid_separation>\-?\d+\.\d+),M,(?P<age>[\d\.]*),\d{4}\*(?P<checksum>[0-9A-F]{2})$'
+          GPVTG: '^\WGPVTG,(?P<cog_true>\d+\.\d+)?,T,(?P<cog_magnetic>\d+\.\d+)?,M,(?P<sog_knots>\d+\.\d+)?,N,(?P<sog_kmhr>\d+\.\d+)?,K,?\w*\*(?P<checksum>[0-9A-F]{2})$'
+          GPRMC: '^\WGPRMC,(?P<utc_position_fix_rmc>\d+\.\d+),(?P<status_rmc>[AV]),(?P<latitude_rmc>\d+\.\d+),(?P<latitude_dir_rmc>[NS]),(?P<longitude_rmc>\d+\.\d+),(?P<longitude_dir_rmc>[EW]),(?P<sog_knots_rmc>\d+\.\d+)?,(?P<cog_true_rmc>\d+\.\d+)?,(?P<day_rmc>\d{2})(?P<month_rmc>\d{2})\d(?P<year_rmc>\d{2}),,(?P<mode_rmc>[ADE]),\w*\*(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          cog_true: float
+          geo_point: str
+          gps_quality_indicator: int
+          hdop: float
+          sog_kmhr: float
+          num_sat_vis: int
+        lat_lon_fields:
+          longitude: [longitude, longitude_dir]
+          latitude: [latitude, latitude_dir]
+  gnsspo112593:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: gnsspo112593
+      reader_udp_port: 53119
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          GPZDA: '^\WGPZDA,(?P<utc_time>\d+\.\d+),(?P<day>\d{2}),(?P<month>\d{2}),(?P<year>\d{4}),(?P<tzoffset_hours>\d{0,2}),(?P<tzoffset_mins>\d{0,2})\*(?P<checksum>[0-9A-F]{2})$'
+          GPGGA: '^\WGPGGA,(?P<utc_position_fix>\d+\.\d+),(?P<latitude>\d+\.\d+),(?P<latitude_dir>[NS]),(?P<longitude>\d+\.\d+),(?P<longitude_dir>[EW]),(?P<gps_quality_indicator>\d+),(?P<num_sat_vis>\d+),(?P<hdop>\d+\.\d+),(?P<ortho_height>\-?\d+\.\d+),M,(?P<geoid_separation>\-?\d+\.\d+),M,(?P<age>[\d\.]*)?,(\d{4})?\*(?P<checksum>[0-9A-F]{2})$'
+          GPVTG: '^\WGPVTG,(?P<cog_true>\d+\.\d+)?,T,(?P<cog_magnetic>\d+\.\d+)?,M,(?P<sog_knots>\d+\.\d+)?,N,(?P<sog_kmhr>\d+\.\d+)?,K,?\w*\*(?P<checksum>[0-9A-F]{2})$'
+          GPHDT: '^\WGPHDT,(?P<heading>\d+\.\d+),T\*(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          cog_true: float
+          geo_point: str
+          gps_quality_indicator: int
+          hdop: float
+          heading: float
+          sog_kmhr: float
+          num_sat_vis: int
+        lat_lon_fields:
+          longitude: [longitude, longitude_dir]
+          latitude: [latitude, latitude_dir]
+  gravim000033:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: gravim000033
+      reader_udp_port: 53149
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<qc_gravity>\d+\.\d+),\s*(?P<gravity>\d+\.\d+),\s*(?P<long_accelerometer>\-?\d+\.\d+),\s*(?P<cross_accelerometer>\-?\d+\.\d+),\s*(?P<beam>\-?\d+\.\d+),\s*(?P<sensor_temp>\-?\d+\.\d+),(?P<status>.{16}),\s*(?P<checksum>\-?\d+),\s*(?P<pressure>\-?\d+\.\d+),\s*(?P<e_temp>\-?\d+\.\d+),\s*(?P<Ve>\-?\d+\.\d+),\s*(?P<Vcc>\-?\d+\.\d+),\s*(?P<Al>\-?\d+\.\d+),\s*(?P<Ax>\-?\d+\.\d+),\s*(?P<latitude>\-?\d+\.\d+),\s*(?P<longitude>\-?\d+\.\d+),\s*(?P<speed>\-?\d+\.\d+),\s*(?P<course>\-?\d+\.\d+),\s*(?P<vmond>\-?\d+\.\d+),(?P<year>\d{4}),(?P<month>\d{2}),(?P<day>\d{2}),(?P<hour>\d{2}),(?P<minute>\d{2}),(?P<second>\d{2}\.\d+),\s*(?P<numline>-?\d+)'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          qc_gravity: float
+          sensor_temp: float
+          gravity: float
+  metsta146582:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: metsta146582
+      reader_udp_port: 53118
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          WIXDR: '^\WWIXDR,PRESS,(?P<barometric_pressure>\d*\.\d+),bar,\D+\Wn\d+,TEMP,(?P<air_temperature>\-?\d*\.\d+),C,RH,(?P<relative_humidity>\d+\.\d+),\WRH,s\Wn\d+,FAN,(?P<fan_status>\d)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          barometric_pressure: float
+          air_temperature: float
+          relative_humidity: float
+          fan_status: int
+  metsta155030:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: metsta155030
+      reader_udp_port: 53115
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          WIXDR: '^\WWIXDR,PRESS,(?P<barometric_pressure>\d*\.\d+),bar,\D+\Wn\d+,TEMP,(?P<air_temperature>\-?\d*\.\d+),C,RH,(?P<relative_humidity>\d+\.\d+),\WRH,s\Wn\d+,FAN,(?P<fan_status>\d)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          air_temperature: float
+          fan_status: int
+          relative_humidity: float
+          barometric_pressure: float
+  motion050952:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: motion050952
+      reader_udp_port: 53122
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          MGHDT: '^\WMGHDT,(?P<heading>\d+\.\d+),T\*(?P<checksum>[0-9A-F]{2})$'
+          MGHCR: '^\WMGHCR'
+          MGTHS: '^\WMGTHS,(?P<heading_true_actual>\d+\.\d+),(?P<heading_status>[AEMSV])\*(?P<checksum>[0-9A-F]{2})$'
+          MGROT: '^\WMGROT,(?P<rate_of_turn>\d+\.\d+),(?P<rot_status>[AV])\*(?P<checksum>[0-9A-F]{2})$'
+          PSXN: '^\WPSXN,23,(?P<roll>\-?\d+\.\d+)?,(?P<pitch>\-?\d+\.\d+)?,(?P<head>\-?\d+\.\d+)?,(?P<heave>\-?\d+\.\d+)?\*(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          head: float
+          heave: float
+          horiz_qual: int
+          hgt_qual: int
+          roll: float
+          pitch: float
+          head_qual: int
+          rp_qual: int
+          rate_of_turn: float
+  motion050998:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: motion050998
+      reader_udp_port: 53123
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^\WMGHDT,(?P<heading>\d+\.\d+),T\*(?P<checksum>[0-9A-F]{2})$'
+        - '^\WMGHCR'
+        - '^\WMGTHS,(?P<heading_true_actual>\d+\.\d+),(?P<heading_status>[AEMSV])\*(?P<checksum>[0-9A-F]{2})$'
+        - '^\WMGROT,(?P<rate_of_turn>\d+\.\d+),(?P<rot_status>[AV])\*(?P<checksum>[0-9A-F]{2})$'
+        - '^\WPSXN,20,(?P<horiz_qual>\d*),(?P<hgt_qual>\d*),(?P<head_qual>\d*),(?P<rp_qual>\d*)\*(?P<checksum>[0-9A-F]{2})$'
+        - '\WPSXN,23,(?P<roll>\-?\d+\.\d+)?,(?P<pitch>\-?\d+\.\d+)?,(?P<head>\-?\d+\.\d+)?,(?P<heave>\-?\d+\.\d+)?\*(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          heave: float
+          head: float
+          hgt_qual: int
+          horiz_qual: int
+          pitch: float
+          roll: float
+          rp_qual: int
+          head_qual: int
+          rate_of_turn: float
+  multib011017:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: multib011017
+      reader_udp_port: 55005
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          EMDPT: '^\WEMDPT,(?P<depth_below_trans>\d+\.\d+),(?P<offset>\d+\.\d+),(?P<range>\d+\.\d+)\*(?P<checksum>[0-9a-f]{2})$'
+          EMDBS: '^\WEMDBS,(?P<depth_feet>\d+\.\d+),f,(?P<depth_meters>\d+\.\d+),M,(?P<depth_fathoms>\d+\.\d+),F\*(?P<checksum>[0-9a-fA-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          offset: float
+          range: float
+          depth_below_trans: float
+          depth_meters: float
+  multib710224:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: multib710224
+      reader_udp_port: 55004
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          EMCTR: '^\WEMCTR,(?P<sensor_datetime>\d{4},\d{2},\d{2},\d{2}:\d{2}:\d{2}\.\d{3}),(?P<latitude>\-?\d+\.\d+),(?P<longitude>\-?\d+\.\d+),(?P<depth>\d+\.\d+),(?P<num_beams>\d+)\*(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          latitude: float
+          num_beams: int
+          longitude: float
+          depth: float
+  nitrat001999:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: nitrat001999
+      reader_udp_port: 53133
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^SATSLF\d+,\d{7},\d+\.\d+,(?P<nitrate_concentration>\-?\d+\.\d+),\-?\d+\.\d+,(?P<a254>\-?\d+\.\d+),(?P<a350>\-?\d+\.\d+),(?P<bromide>\-?\d+\.\d+),\d+,(?P<dark_value>\d+),\d,(?P<ASM>(\d+,){255}\d+),(?P<internal_temp>\-?\d+\.\d+),(?P<spec_temp>\-?\d+\.\d+),(?P<lamp_temp>\-?\d+\.\d+),(?P<lamp_ontime>\d+),(?P<internal_humidity>\d+\.\d+),(?P<main_voltage>\d+\.\d+),(?P<lamp_voltage>\d+\.\d+),(?P<internal_voltage>\d+\.\d+),(?P<main_current>\d+),(\-?\d+\.\d+,){5}(\-?\d?\.?\d?,){4}(?P<checksum>\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          main_voltage: float
+          a350: float
+          lamp_temp: float
+          a254: float
+          nitrate_concentration: float
+          bromide: float
+          internal_temp: float
+          spec_temp: float
+          internal_humidity: float
+          lamp_ontime: int
+          lamp_voltage: float
+          internal_voltage: float
+          main_current: int
+          nitrate: float
+          N_nitrate: float
+          dark_value: int
+          ASM: float
+  oxygen003594:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: oxygen003594
+      reader_udp_port: 54132
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^\d+,\d+,(?P<oxy_concentration>\d+\.\d+),(?P<oxy_concentration_corr>\d+\.\d+),(?P<air_saturation>\d+\.\d+),(?P<temp>\-?\d+\.\d+),(?P<salinity_ref>\d+\.\d+),(?P<tsg_temp>\-?\d+\.\d+),(?P<tsg_sal>\d+\.\d+),(?P<latitude>\-?\d+\.\d+),(?P<longitude>\-?\d+\.\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          oxy_concentration: float
+          air_saturation: float
+          temp: float
+          oxy_concentration_corr: float
+  oxygen083431:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: oxygen083431
+      reader_udp_port: 53147
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^\w\s\d+,\d+,\d+,\d+,\d+,\d+,(?P<instrument_temperature>\-?\d+\.\d+),(?P<dissolved_gas_pressure>\d+\.\d+),(?P<supply_voltage>\d+\.\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          instrument_temperature: float
+          supply_voltage: float
+          dissolved_gas_pressure: float
+  parqsr50172:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: parqsr50172
+      reader_udp_port: 53104
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<par>\d+\.\d+),\s+(?P<temperature>\-?\d+\.\d+),\s+(?P<voltage>\d+\.\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          temperature: float
+          par: float
+          voltage: float
+  pcotwo000338:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: pcotwo000338
+      reader_udp_port: 54109
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<sensor_datetime>\d*\.\d+),\s*(?P<co2_mv>\d*\.\d+),\s*(?P<cell_temp>\-?\d*\.\d+),\s*(?P<baro_press>\d*\.\d+),\s*(?P<flow>\d*\.\d+),\s*(?P<co2_ppm>\d*\.\d+),\s*(?P<pco2_uatm>\d*\.\d+),\s*(?P<equil_temp>\-?\d*\.\d+),\s*(?P<sbe38_temp>\-?\d*\.\d+),\s*(?P<id_number>\d*\.\d+),\s*(?P<id>.*),\s*(?P<latitude>\d*\.\d+)\s(?P<lat_dir>[NS]),\s*(?P<longitude>\d*\.\d+)\s(?P<lon_dir>[EW]),\s*(?P<cog>\d*\.\d+),\s*(?P<sog>\d*\.\d+),\s*(?P<sst>\-?\d*\.\d+)?,\s*(?P<salinity>\d*\.\d+),\s*(?P<baro>\d*\.\d+),\s*(?P<wind_speed>\d*\.\d+),\s*(?P<wind_dir>\d*\.\d+),\s*(?P<unknown>[\-\d\.na]*)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          co2_mv: float
+          flow: float
+          cell_temp: float
+          pco2_uatm: float
+          co2_ppm: float
+          id_number: float
+          sbe38_temp: float
+          baro_press: float
+  precip240032:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: precip240032
+      reader_udp_port: 53073
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^V(?P<version_unitless>\d+\.\d+);(?P<sensordate_unitless>\d\d\.\d\d\.\d\d);(?P<sensortime_unitless>\d\d:\d\d:\d\d);(?P<precipitationrate_mmperhr>\d\d\.\d\d);(?P<status1_unitless>[0-9A-F]{4});(?P<status2_unitless>[0-9A-F]{4});(?P<status3_unitless>[0-9A-F]{4});(?P<status4_unitless>[0-9A-F]{4});(?P<heating1_w>\d+\.\d+);(?P<heating2_w>\d+\.\d+);(?P<heating3_w>\d+\.\d+);(?P<heating4_w>\d+\.\d+);(?P<frequencyhighraw1_hz>\d+);(?P<frequencyhighraw2_hz>\d+);(?P<frequencyhighraw3_hz>\d+);(?P<frequencyhighraw4_hz>\d+);(?P<temperature11_degreesc>[+-]?\d+\.\d+);(?P<temperature12_degreesc>[+-]?\d+\.\d+);(?P<temperature13_degreesc>[+-]?\d+\.\d+);(?P<temperature21_degreesc>[+-]?\d+\.\d+);(?P<temperature22_degreesc>[+-]?\d+\.\d+);(?P<temperature23_degreesc>[+-]?\d+\.\d+);(?P<temperature31_degreesc>[+-]?\d+\.\d+);(?P<temperature32_degreesc>[+-]?\d+\.\d+);(?P<temperature33_degreesc>[+-]?\d+\.\d+);(?P<temperature41_degreesc>[+-]?\d+\.\d+);(?P<temperature42_degreesc>[+-]?\d+\.\d+);(?P<temperature43_degreesc>[+-]?\d+\.\d+);(?P<internaltemperature_degreesc>[+-]?\d+\.\d+);(?P<externaltemperature_degreesc>[+-]?\d+\.\d+);(?P<supplyvoltage_v>\d+\.\d+);(?P<frequencymedium1_hz>\d+);(?P<frequencycurrent1_hz>\d+);(?P<frequencymedium2_hz>\d+);(?P<frequencycurrent2_hz>\d+);(?P<frequencymedium3_hz>\d+);(?P<frequencycurrent3_hz>\d+);(?P<frequencymedium4_hz>\d+);(?P<frequencycurrent4_hz>\d+);(?P<knock_unitless>\d);(?P<knockanalog_unitless>\d+);(?P<frequencylow1_hz>\d+);(?P<frequencylow2_hz>\d+);(?P<frequencylow3_hz>\d+);(?P<frequencylow4_hz>\d+);$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          supercooledwater2_unitless: int
+          supplyvoltage_v: float
+          precipitationrate_mmperhr: float
+          status4_unitless: str
+          crystallization3_unitless: int
+          externaltemperature_degreesc: float
+          temperature11_degreesc: float
+          temperature23_degreesc: float
+          ice4_unitless: int
+          temperature22_degreesc: float
+          precipitation3_unitless: int
+          temperature33_degreesc: float
+          temperature42_degreesc: float
+          temperature32_degreesc: float
+          supercooledwater1_unitless: int
+          temperature43_degreesc: float
+          temperature12_degreesc: float
+          temperature41_degreesc: float
+          ice1_unitless: int
+          ice2_unitless: int
+          supercooledwater3_unitless: int
+          precipitation1_unitless: int
+          precipitation4_unitless: int
+          precipitation2_unitless: int
+          status1_unitless: str
+          internaltemperature_degreesc: float
+          status2_unitless: str
+          temperature13_degreesc: float
+          temperature21_degreesc: float
+          temperature31_degreesc: float
+          ice3_unitless: int
+          status3_unitless: str
+          supercooledwater4_unitless: int
+          crystallization4_unitless: int
+          crystallization1_unitless: int
+          crystallization2_unitless: int
+  precip304382:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: precip304382
+      reader_udp_port: 53102
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<weather_code>[ERSP]{1,2}[-+]?)?\s*(?P<precip_rate>\d*\.\d+)\s+(?P<accumulation>\d+\.\d+)\s+\d+\*\d+\s+(?P<signal_strength>\d+)\s+(?P<one_min_avg>\d+)\s+(?P<baseline_data>\d+)\s+(?P<air_temp>[-+]\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          weather_code: str
+          precip_rate: float
+          accumulation: float
+          signal_strength: int
+          one_min_avg: int
+          baseline_data: int
+          air_temp: int
+  pyrano200196:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: pyrano200196
+      reader_udp_port: 53137
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^\d+,\d+,(?P<rad>\-?\d+\.?\d*),(?P<body_temp>\-?\d+\.\d+),(?P<ext_volts>\d+\.\d+),\d+,(?P<op_mode>\d+),(?P<status>\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          status: int
+          ext_volts: float
+          op_mode: int
+          rad: float
+          body_temp: float
+  pyrgeo210132:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: pyrgeo210132
+      reader_udp_port: 53136
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^\d+,\d+,(?P<net_rad>\-?\d+\.\d+),(?P<lw_down>\-?\d+\.\d+),(?P<body_temp>\-?\d+\.\d+),(?P<ext_volts>\d+\.\d+),\d+,(?P<op_mode>\d+),(?P<status>\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          body_temp: float
+          ext_volts: float
+          lw_down: float
+          net_rad: float
+          op_mode: int
+          status: int
+  seatsg450385:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: seatsg450385
+      reader_udp_port: 53110
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<temperature>\-?\d+\.\d+),\s+(?P<conductivity>\-?\d+\.\d+),\s+(?P<salinity>\d+\.\d+),\s+(?P<sound_velocity>\d+\.\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          salinity: float
+          sound_velocity: float
+          conductivity: float
+          temperature: float
+  seatsg450399:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: seatsg450399
+      reader_udp_port: 53114
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<temperature>\-?\d+\.\d+),\s+(?P<conductivity>\-?\d+\.\d+),\s+(?P<salinity>\d+\.\d+),\s+(?P<sound_velocity>\d+\.\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          temperature: float
+          sound_velocity: float
+          conductivity: float
+          salinity: float
+  sndvel203300:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: sndvel203300
+      reader_udp_port: 53105
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<sound_velocity>\d+\.\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          sound_velocity: float
+  thermo000647:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: thermo000647
+      reader_udp_port: 53107
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<temperature>\-?\d+\.\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          temperature: float
+  thermo003726:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: thermo003726
+      reader_udp_port: 53103
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<temp>-?\d+\.\d+)\sC'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          temp: float
+  thermo015319:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: thermo015319
+      reader_udp_port: 53106
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<temperature>\-?\d+\.\d+)\s\w$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          temperature: float
+  thermo381362:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: thermo381362
+      reader_udp_port: 53111
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+        - '^(?P<temperature>\-?\d+\.\d+)$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          temperature: float
+  winchrapp:
+    logger_template: grafana_live_stream_logger
+    variables:
+      sensor_id: winchrapp
+      reader_udp_port: 53128
+      regex_transform_kwargs:
+        record_format: '^(?P<data_id>\w+)\s*(?P<data_id_orig>[-\w]+)\s*(?P<timestamp>[0-9TZ:\-\.]*)\s*(?P<field_string>(.|\r|\n)*)'
+        return_das_record: true
+        field_patterns:
+          RCWD: '^\WRCWD,(?P<winch_number>\d),(?P<winch_mode>\d),(?P<length_motor>\-?\d+\.\d+),(?P<tension_motor>\-?\d+\.\d+),(?P<velocity>\-?\d+\.\d+),(?P<alarm>\-?\d),(?P<length_block>\-?\d+\.\d+),(?P<tension_load_cell>\-?\d+\.\d+)\*(?P<checksum>[0-9A-F]{2})$'
+      convert_fields_transform_kwargs:
+        delete_source_fields: true
+        delete_unconverted_fields: true
+        fields:
+          winch_number: int
+          winch_mode: int
+          length_motor: float
+          tension_motor: float
+          velocity: float
+          alarm: int
+          length_block: float
+          tension_load_cell: float
+modes:
+  'off':
+    adcpwhdepth: adcpwhdepth-off
+    adcpwhspeedl: adcpwhspeedl-off
+    aisnav000001: aisnav000001-off
+    anemom000001: anemom000001-off
+    anemom000002: anemom000002-off
+    anemom000091: anemom000091-off
+    anemom000092: anemom000092-off
+    anemom098639: anemom098639-off
+    anemom351006: anemom351006-off
+    anemom951005: anemom951005-off
+    flowme021463: flowme021463-off
+    flowme021464: flowme021464-off
+    fluoro006922: fluoro006922-off
+    fluoro006977: fluoro006977-off
+    gnsspo000045: gnsspo000045-off
+    gnsspo112593: gnsspo112593-off
+    gravim000033: gravim000033-off
+    metsta146582: metsta146582-off
+    metsta155030: metsta155030-off
+    motion050952: motion050952-off
+    motion050998: motion050998-off
+    multib011017: multib011017-off
+    multib710224: multib710224-off
+    nitrat001999: nitrat001999-off
+    oxygen003594: oxygen003594-off
+    oxygen083431: oxygen083431-off
+    parqsr50172: parqsr50172-off
+    pcotwo000338: pcotwo000338-off
+    precip240032: precip240032-off
+    precip304382: precip304382-off
+    pyrano200196: pyrano200196-off
+    pyrgeo210132: pyrgeo210132-off
+    seatsg450385: seatsg450385-off
+    seatsg450399: seatsg450399-off
+    sndvel203300: sndvel203300-off
+    thermo000647: thermo000647-off
+    thermo003726: thermo003726-off
+    thermo015319: thermo015319-off
+    thermo381362: thermo381362-off
+    winchrapp: winchrapp-off
+  'on':
+    adcpwhdepth: adcpwhdepth-on
+    adcpwhspeedl: adcpwhspeedl-on
+    aisnav000001: aisnav000001-on
+    anemom000001: anemom000001-on
+    anemom000002: anemom000002-on
+    anemom000091: anemom000091-on
+    anemom000092: anemom000092-on
+    anemom098639: anemom098639-on
+    anemom351006: anemom351006-on
+    anemom951005: anemom951005-on
+    flowme021463: flowme021463-on
+    flowme021464: flowme021464-on
+    fluoro006922: fluoro006922-on
+    fluoro006977: fluoro006977-on
+    gnsspo000045: gnsspo000045-on
+    gnsspo112593: gnsspo112593-on
+    gravim000033: gravim000033-on
+    metsta146582: metsta146582-on
+    metsta155030: metsta155030-on
+    motion050952: motion050952-on
+    motion050998: motion050998-on
+    multib011017: multib011017-on
+    multib710224: multib710224-on
+    nitrat001999: nitrat001999-on
+    oxygen003594: oxygen003594-on
+    oxygen083431: oxygen083431-on
+    parqsr50172: parqsr50172-on
+    pcotwo000338: pcotwo000338-on
+    precip240032: precip240032-on
+    precip304382: precip304382-on
+    pyrano200196: pyrano200196-on
+    pyrgeo210132: pyrgeo210132-on
+    seatsg450385: seatsg450385-on
+    seatsg450399: seatsg450399-on
+    sndvel203300: sndvel203300-on
+    thermo000647: thermo000647-on
+    thermo003726: thermo003726-on
+    thermo015319: thermo015319-on
+    thermo381362: thermo381362-on
+    winchrapp: winchrapp-on
+default_mode: 'off'
+
