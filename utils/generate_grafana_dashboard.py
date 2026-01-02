@@ -2,31 +2,67 @@
 """
 Generates a Grafana Dashboard JSON model for OpenRVDAS Live data.
 
-This script uses the CoriolixSensorConfig class to discover active sensors (by slug),
-then constructs a dashboard JSON file.
+This script:
+1. Discovers active sensors via the Coriolix API.
+2. Resolves their true 'data_id' (e.g. gnss_cnav) using a mapping file or UDP scan.
+3. Generates a dashboard with:
+   - One ROW per Sensor (data_id).
+   - One PANEL per Message Type (Channel) within that row.
 
 Usage:
-    ./generate_grafana_dashboard.py --title "R/V Sikuliaq Real-time" --all_sensors > dashboard.json
+    # Use existing mapping (Fast)
+    ./generate_grafana_dashboard.py --title "R/V Sikuliaq Live" --mapping_file sensor_map.yaml > dashboard.json
+
+    # Auto-scan UDP for IDs (Slower)
+    ./generate_grafana_dashboard.py --title "R/V Sikuliaq Live" --all_sensors > dashboard.json
 """
 
 import argparse
 import json
 import sys
-import datetime
+import os
+import yaml
 
 # Import shared logic
 try:
     from generate_grafana_live_stream import CoriolixSensorConfig
 except ImportError:
-    sys.exit(
-        "Error: Could not import 'CoriolixSensorConfig' from 'generate_grafana_live_stream.py'. Ensure both files are in the same directory.")
+    sys.exit("Error: Could not import 'CoriolixSensorConfig' from 'generate_grafana_live_stream.py'.")
+
+try:
+    from generate_id_mapping import SensorIDMapper
+except ImportError:
+    sys.exit("Error: Could not import 'SensorIDMapper' from 'generate_id_mapping.py'.")
 
 
 class GrafanaDashboardGenerator:
-    def __init__(self, api_url):
+    def __init__(self, api_url, mapping_file=None):
         self.sensor_config = CoriolixSensorConfig(api_url=api_url)
         self.PANEL_HEIGHT = 8
+        self.PANEL_WIDTH = 12  # Half width for 2 panels per row, or 8 for 3
         self.ROW_WIDTH = 24  # Grafana standard grid width
+
+        # Load or Generate Mapping
+        self.id_mapping = self._load_id_mapping(mapping_file, api_url)
+
+    def _load_id_mapping(self, mapping_file, api_url):
+        """Loads ID mapping from file or generates on the fly."""
+        if mapping_file:
+            if os.path.exists(mapping_file):
+                sys.stderr.write(f"Loading sensor ID mapping from {mapping_file}...\n")
+                try:
+                    with open(mapping_file, 'r') as f:
+                        return yaml.safe_load(f) or {}
+                except Exception as e:
+                    sys.stderr.write(f"Error reading mapping file: {e}\n")
+                    return {}
+            else:
+                sys.stderr.write(f"Warning: Mapping file {mapping_file} not found. Scanning UDP...\n")
+
+        # Fallback to scanning
+        sys.stderr.write("Scanning network for active Data IDs...\n")
+        mapper = SensorIDMapper(api_url=api_url)
+        return mapper.build_mapping()
 
     def _get_base_dashboard(self, title):
         """Returns the skeleton of a Grafana dashboard."""
@@ -61,24 +97,34 @@ class GrafanaDashboardGenerator:
             "panels": []
         }
 
-    def _create_sensor_panel(self, title, targets, y_pos):
+    def _create_channel_panel(self, title, channel, x_pos, y_pos):
         """
-        Creates a single Stat panel with multiple targets (channels).
+        Creates a Stat panel subscribed to a specific channel (message type).
         """
         panel = {
             "type": "stat",
             "title": title,
             "gridPos": {
                 "h": self.PANEL_HEIGHT,
-                "w": self.ROW_WIDTH,  # Full width
-                "x": 0,
+                "w": self.PANEL_WIDTH,
+                "x": x_pos,
                 "y": y_pos
             },
             "datasource": {
                 "type": "datasource",
                 "uid": "grafana"
             },
-            "targets": targets,
+            "targets": [
+                {
+                    "channel": channel,
+                    "datasource": {
+                        "type": "datasource",
+                        "uid": "grafana"
+                    },
+                    "queryType": "measurements",
+                    "refId": "A"
+                }
+            ],
             "options": {
                 "reduceOptions": {
                     "values": False,
@@ -112,73 +158,70 @@ class GrafanaDashboardGenerator:
 
         current_y = 0
 
-        for sensor_id in sensor_ids:
-            # 1. Fetch Metadata (using slug/id)
-            meta = self.sensor_config.get_sensor_metadata(sensor_id)
+        for sensor_input in sensor_ids:
+            # 1. Fetch Metadata (using API ID)
+            meta = self.sensor_config.get_sensor_metadata(sensor_input)
             if not meta:
                 continue
 
-            # 2. Identify Message Types (Streams)
+            # 2. Resolve the Data ID (Slug)
+            # Check mapping first, then fallback to what API returned
+            api_id = meta['sensor_id']
+            data_id = self.id_mapping.get(api_id, api_id)
+
+            # 3. Identify Message Types (Channels)
             regex_kwargs = meta.get('regex_transform_kwargs', {})
             field_patterns = regex_kwargs.get('field_patterns', {})
 
             message_types = []
 
-            # If it's a dictionary, the keys are the message types (e.g., 'GPGGA', 'WIMDA')
             if isinstance(field_patterns, dict):
                 message_types = list(field_patterns.keys())
-
-            # If it's a list, we try to re-extract using the helper logic
             elif isinstance(field_patterns, list):
                 for pattern in field_patterns:
+                    # Access protected helper from shared instance
                     extracted = self.sensor_config._extract_message_type(str(pattern))
                     if extracted != 'unknown':
                         message_types.append(extracted)
-
                 if not message_types:
-                    message_types = ['+']
+                    message_types = ['+']  # Fallback wildcard
 
-            # 3. Create Row
-            row = self._create_row(f"Sensor: {sensor_id}", current_y)
+            # 4. Create Row for the Sensor
+            row = self._create_row(f"Sensor: {data_id}", current_y)
             dashboard["panels"].append(row)
             current_y += 1
 
-            # 4. Create Targets (one per message type)
-            targets = []
+            # 5. Create Panels (One per Message Type)
+            current_x = 0
 
-            def make_target(channel_name, ref_id):
-                return {
-                    "channel": channel_name,
-                    "datasource": {
-                        "type": "datasource",
-                        "uid": "grafana"
-                    },
-                    "queryType": "measurements",
-                    "refId": ref_id
-                }
-
-            import string
-            letters = list(string.ascii_uppercase)
-
-            for i, msg_type in enumerate(message_types):
-                # Channel Pattern: stream/openrvdas/{slug}/{message_type}/{message_type}
+            for msg_type in message_types:
+                # Path: stream/openrvdas/{data_id}/{msg_type}
+                # e.g. stream/openrvdas/gnss_cnav/GPGGA
                 if msg_type == '+':
-                    channel = f"stream/openrvdas/{sensor_id}/+"
+                    channel = f"stream/openrvdas/{data_id}/+"
+                    panel_title = f"{data_id} (All)"
                 else:
-                    channel = f"stream/openrvdas/{sensor_id}/{msg_type}/{msg_type}"
+                    channel = f"stream/openrvdas/{data_id}/{msg_type}"
+                    panel_title = f"{msg_type}"
 
-                ref_id = letters[i % len(letters)]
-                targets.append(make_target(channel, ref_id))
+                panel = self._create_channel_panel(
+                    title=panel_title,
+                    channel=channel,
+                    x_pos=current_x,
+                    y_pos=current_y
+                )
 
-            # 5. Create Panel
-            panel = self._create_sensor_panel(
-                title=f"{sensor_id} Live Data",
-                targets=targets,
-                y_pos=current_y
-            )
+                dashboard["panels"].append(panel)
 
-            dashboard["panels"].append(panel)
-            current_y += self.PANEL_HEIGHT
+                # Grid Layout Logic
+                current_x += self.PANEL_WIDTH
+                if current_x >= self.ROW_WIDTH:
+                    current_x = 0
+                    current_y += self.PANEL_HEIGHT
+
+            # Advance Y if row wasn't filled perfectly
+            if current_x > 0:
+                current_y += self.PANEL_HEIGHT
 
         return json.dumps(dashboard, indent=2)
 
@@ -187,23 +230,38 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate Grafana Dashboard JSON")
     parser.add_argument('--title', default="OpenRVDAS Real-time", help="Dashboard title")
     parser.add_argument('--api_url', default=None, help="Coriolix API URL")
-    parser.add_argument('--sensors', nargs='*', help="List of sensors (slugs)")
+
+    parser.add_argument('--sensors', nargs='*', help="List of sensors (API IDs)")
     parser.add_argument('--all_sensors', action='store_true', help="Include all active sensors")
+
+    parser.add_argument('--mapping_file', default=None,
+                        help="Path to YAML mapping file (API_ID -> DATA_ID). If omitted, scans UDP.")
 
     args = parser.parse_args()
 
-    generator = GrafanaDashboardGenerator(args.api_url)
+    # 1. Initialize Generator
+    generator = GrafanaDashboardGenerator(args.api_url, args.mapping_file)
 
-    sensors = []
+    # 2. Determine List of Sensors to Process
+    sensors_to_process = []
+
     if args.sensors:
-        sensors.extend(args.sensors)
+        sensors_to_process.extend(args.sensors)
+
     if args.all_sensors:
-        sensors.extend(generator.sensor_config.get_active_sensor_ids())
+        # We need the API list to iterate over
+        # We can use the mapping keys or fetch from API again
+        # Let's fetch active IDs from API to be safe
+        # Note: get_active_sensor_ids returns Slugs if found, or IDs.
+        # But our generator expects input that get_sensor_metadata can handle.
+        api_sensors = generator.sensor_config.get_active_sensor_ids()
+        sensors_to_process.extend(api_sensors)
 
-    sensors = sorted(list(set(sensors)))
+    sensors_to_process = sorted(list(set(sensors_to_process)))
 
-    if not sensors:
-        sys.stderr.write("No sensors specified.\n")
+    if not sensors_to_process:
+        sys.stderr.write("No sensors specified. Use --sensors or --all_sensors.\n")
         sys.exit(1)
 
-    print(generator.generate(sensors, args.title))
+    # 3. Generate JSON
+    print(generator.generate(sensors_to_process, args.title))
