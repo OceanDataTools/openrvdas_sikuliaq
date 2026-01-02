@@ -95,11 +95,27 @@ class CoriolixSensorConfig:
         return mapping.get(api_type.lower(), 'str')
 
     def _extract_message_type(self, regex_str):
-        """Attempts to extract an NMEA-style talker/message ID from the regex."""
-        match = re.search(r'^\^\\W([A-Z0-9]+)', regex_str)
+        r"""
+        Attempts to extract an NMEA-style talker/message ID from the regex.
+        Looks for patterns like \WID, \$ID, or !ID, ignoring start anchors.
+        """
+        # 1. Look for literal \W followed by ID (e.g. \WMGHDT, \WPSXN)
+        # Matches literal backslash, then W, then the ID.
+        match = re.search(r'\\W([A-Z0-9]+)', regex_str)
         if match: return match.group(1)
-        match = re.search(r'^\^\\\$([A-Z0-9]+)', regex_str)
+
+        # 2. Look for literal \$ followed by ID (e.g. \$GPGGA)
+        match = re.search(r'\\\$([A-Z0-9]+)', regex_str)
         if match: return match.group(1)
+
+        # 3. Look for literal ! followed by ID (e.g. !AIVDO for AIS)
+        match = re.search(r'!([A-Z0-9]+)', regex_str)
+        if match: return match.group(1)
+
+        # 4. Fallback: If it starts with ^ID (rare, but possible for simple formats)
+        match = re.search(r'^\^([A-Z0-9]+)', regex_str)
+        if match: return match.group(1)
+
         return 'unknown'
 
     def _extract_regex_groups(self, regex_list):
