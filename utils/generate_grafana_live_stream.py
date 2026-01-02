@@ -116,7 +116,7 @@ class CoriolixSensorConfig:
         match = re.search(r'^\^([A-Z0-9]+)', regex_str)
         if match: return match.group(1)
 
-        return 'unknown'
+        return 'mesg'
 
     def _extract_regex_groups(self, regex_list):
         """Extracts all named capture groups from regex strings."""
@@ -228,9 +228,6 @@ class CoriolixSensorConfig:
         use_dict = True
         for pattern in pattern_list:
             msg_type = self._extract_message_type(pattern)
-            if msg_type == 'unknown':
-                use_dict = False
-                break
             field_patterns[msg_type] = QuotedString(pattern)
 
         if not use_dict:
