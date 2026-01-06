@@ -8,6 +8,7 @@ import logging
 import re
 import pprint
 import sys
+import time
 
 from os.path import dirname, realpath
 
@@ -16,7 +17,11 @@ from logger.utils.das_record import DASRecord
 # Append openrvdas root to syspath prior to importing openrvdas modules
 sys.path.append(dirname(dirname(dirname(realpath(__file__)))))
 
-DEFAULT_RECORD_FORMAT = r"^(?P<timestamp>[0-9TZ:\-\.]*)\s+(?P<data_id>\w+)\s*(?P<field_string>(.|\r|\n)*)"
+#DEFAULT_RECORD_FORMAT = r"^(?P<timestamp>[0-9TZ:\-\.]*)\s+(?P<data_id>\w+)\s*(?P<field_string>(.|\r|\n)*)"
+
+# Note: this is a "permissive" regex. It looks for data_id and timestamp prior to field_string,
+# But still parses field_string if they are absent
+DEFAULT_RECORD_FORMAT = r"^(?:(?P<data_id>\w+)\s+(?P<timestamp>[0-9TZ:\-\.]*)\s+)?(?P<field_string>(.|\r|\n)*)"  # noqa 502
 
 
 ################################################################################
@@ -25,6 +30,7 @@ class RegexParser:
     def __init__(self,
                  record_format=None,
                  field_patterns=None,
+                 default_data_id=None,
                  return_das_record=False,
                  return_json=False,
                  quiet=False):
@@ -43,6 +49,10 @@ class RegexParser:
             - a dict of message_type:regex patterns to be tried. When one
               matches, the record's message_type is set accordingly.
 
+        default_data_id
+            If specified, use this string as the data_id if no data_id is
+            found in the source record (i.e. as a fallback).
+
         return_json - return the parsed fields as a JSON encoded dict
 
         return_das_record - return the parsed fields as a DASRecord object
@@ -56,6 +66,8 @@ class RegexParser:
         self.compiled_record_format = re.compile(self.record_format)
         self.return_das_record = return_das_record
         self.return_json = return_json
+        self.default_data_id = default_data_id  # Store the optional fallback data_id
+
         if return_das_record and return_json:
             raise ValueError('Only one of return_json and return_das_record '
                              'may be true.')
@@ -102,20 +114,38 @@ class RegexParser:
         if parsed_record is None:
             return None
 
-        # Extract the data_id
+        # Logic to determine data_id:
+        # 1. Look for 'data_id' extracted from the record via regex.
+        # 2. If that fails, use the default_data_id configured in __init__.
+        # 3. If neither exists, default to 'unknown'.
         data_id = parsed_record.get('data_id', None)
+        if data_id is None:
+            if self.default_data_id:
+                data_id = self.default_data_id
+            else:
+                data_id = 'unknown'
 
-        # Convert timestamp to numeric, if it's there
+        # Convert timestamp to numeric, if it's there.
+        # Initialize to None first to avoid UnboundLocalError if 'timestamp'
+        # is not in the regex groups.
+        timestamp = None
         timestamp_text = parsed_record.get('timestamp', None)
+
         if timestamp_text is not None:
             timestamp = self.convert_timestamp(timestamp_text)
             if timestamp is not None:
                 parsed_record['timestamp'] = timestamp
 
+        # If no timestamp found, DASRecord will usually default to time.time()
+        # if passed None.
+        if timestamp is None:
+            timestamp = time.time()
+
         # Extract the field string we're going to parse;
         # remove trailing whitespace.
-        field_string = parsed_record.get('field_string', None).rstrip()
+        field_string = parsed_record.get('field_string', None)
         if field_string is not None:
+            field_string = field_string.rstrip()
             del parsed_record['field_string']
 
         message_type = None
@@ -163,8 +193,18 @@ class RegexParser:
                 return None
 
         elif self.return_json:
+            # Note: We must ensure the 'data_id' key is updated in the dict
+            # if we are returning JSON, as parsed_record still contains the
+            # original regex match dict (minus field_string).
+            parsed_record['data_id'] = data_id
+            if 'timestamp' not in parsed_record:
+                 parsed_record['timestamp'] = timestamp
             return json.dumps(parsed_record)
         else:
+            # Same as JSON case, update the dict before returning
+            parsed_record['data_id'] = data_id
+            if 'timestamp' not in parsed_record:
+                 parsed_record['timestamp'] = timestamp
             return parsed_record
 
     ############################
