@@ -236,6 +236,13 @@ class CoriolixSensorConfig:
         if not use_dict:
             field_patterns = [QuotedString(p) for p in pattern_list]
 
+        # --- Configure Regex Transform Arguments ---
+        regex_transform_kwargs = {
+            'return_das_record': True,
+            'field_patterns': field_patterns,
+            'default_data_id': data_id  # Always pass the sensor ID as fallback
+        }
+
         # --- Fetch Parameters (Must use hardware ID) ---
         # We can't reuse _fetch_all_sensors for parameters as that endpoint is likely too huge.
         # We must query the parameter endpoint specifically.
@@ -261,7 +268,10 @@ class CoriolixSensorConfig:
             name = obj.get('processing_symbol')
             dtype = obj.get('data_type')
             if name and dtype:
-                fields_map[name] = self._map_to_python_type(dtype)
+                # Build dict for ConvertFieldsTransform including meta
+                # Only including data_type for now.
+                field_config = {'data_type': self._map_to_python_type(dtype)}
+                fields_map[name] = field_config
                 api_param_names.add(name)
 
         regex_field_names = self._extract_regex_groups(pattern_list)
@@ -273,20 +283,11 @@ class CoriolixSensorConfig:
                 base_name = name[:-4]
                 if base_name in all_known_fields:
                     lat_lon_fields[base_name] = FlowList([base_name, name])
-                    if base_name in fields_map: del fields_map[base_name]
-                    if name in fields_map: del fields_map[name]
 
         return {
             'sensor_id': data_id,  # This is the Slug/Data ID
             'reader_udp_port': transmit_port,
-            'regex_transform_kwargs': {
-                'record_format': QuotedString(r'^(?P<data_id>\w+)\s*'
-                                              r'(?P<data_id_orig>[-\w]+)\s*'
-                                              r'(?P<timestamp>[0-9TZ:\-\.]*)\s*'
-                                              r'(?P<field_string>(.|\r|\n)*)'),
-                'return_das_record': True,
-                'field_patterns': field_patterns
-            },
+            'regex_transform_kwargs': regex_transform_kwargs,
             'convert_fields_transform_kwargs': {
                 'delete_source_fields': True,
                 'delete_unconverted_fields': True,
