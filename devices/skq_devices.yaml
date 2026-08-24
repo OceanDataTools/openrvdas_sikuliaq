@@ -1,0 +1,1322 @@
+################################################################################
+# Device and device_type definitions for R/V Sikuliaq
+#
+# Point a cruise definition at this file with, e.g.
+#
+#   variables:
+#     parse_definition_path: local/sikuliaq/devices/skq_devices.yaml
+#
+# Sensor inventory, ports and sample records are from the ship's datagram map:
+#   https://web.sikuliaq.alaska.edu/underway-data/underway-sensor-datagrams
+#
+# NOTE ON RECORD SHAPE
+# --------------------
+# Sensors served by a Raspberry Pi (the 531xx ports) prepend their own logger
+# id and timestamp to the payload, tab-separated:
+#
+#   wind_mast_port<TAB>2026-08-23T22:14:09.4143Z<TAB>$WIMWV,282,R,21.0,N,A*06
+#
+# If the OpenRVDAS reader also prefixes the record, the parser sees the id
+# twice and the inner copy lands in the field string. Sensors taken straight
+# from the LDS ports (541xx) or direct from the sensor do NOT have this
+# prefix. See "KNOWN ISSUES" at the bottom of this file.
+#
+# FIELD DEFINITION CONFIDENCE
+# ---------------------------
+# Definitions below are marked:
+#   [NMEA]        standard sentence; field meanings are from the NMEA 0183 spec
+#   [VERIFIED]    matched against real Sikuliaq records
+#   [PROVISIONAL] record *shape* is correct and will parse, but the meaning of
+#                 individual fields is inferred. Confirm against the ship's
+#                 cruisedata:\SKQxxxx\lds\docs\format_descriptions_SKQ202x.txt
+#                 before trusting these values scientifically.
+################################################################################
+
+includes:
+  # Stock device_types: AIS, Garmin02/19, Knudsen3260, Seapath200/330/380,
+  # TrimbleGPS, ADCP_OS75, Gravimeter_BGM3, Gyrocompass, MultibeamEM122,
+  # PCO2_LDEO, PGUV, SBE38, SBE48, SVP, TSG_SBE45, Winch
+  - contrib/devices/*.yaml
+
+################################################################################
+device_types:
+
+  ##############################################################################
+  # WIND
+  ##############################################################################
+
+  # [NMEA] Relative (apparent) wind. $WIMWV
+  SKQ_WindRelative:
+    category: "device_type"
+    description: "Relative wind speed/angle, NMEA MWV"
+    format:
+      MWV: "${:2l}MWV,{WindAngle:g},{Reference:w},{WindSpeed:g},{WindSpeedUnits:w},{Status:w}*{Checksum:x}"
+    fields:
+      WindAngle:
+        units: "degrees"
+        description: "Wind angle, 0-359, relative to bow (R) or true (T)"
+      Reference:
+        description: "R = relative, T = true"
+      WindSpeed:
+        description: "Wind speed, units given by WindSpeedUnits"
+      WindSpeedUnits:
+        description: "K = km/h, M = m/s, N = knots, S = statute mph"
+      Status:
+        description: "A = valid, V = invalid"
+
+  # [NMEA] True wind direction and speed. $WIMWD
+  # The magnetic-direction field is routinely empty on Sikuliaq, hence 'og'.
+  SKQ_WindTrue:
+    category: "device_type"
+    description: "True wind direction/speed, NMEA MWD"
+    format:
+      MWD: "${:2l}MWD,{WindDirTrue:og},T,{WindDirMag:og},M,{WindSpeedKt:og},N,{WindSpeedMs:og},M*{Checksum:x}"
+    fields:
+      WindDirTrue:
+        units: "degrees"
+        description: "Wind direction, degrees true"
+      WindDirMag:
+        units: "degrees"
+        description: "Wind direction, degrees magnetic (often empty)"
+      WindSpeedKt:
+        units: "knots"
+        description: "Wind speed in knots"
+      WindSpeedMs:
+        units: "m/s"
+        description: "Wind speed in meters/second"
+
+  # [VERIFIED] Gill ultrasonic anemometer, polled mode.
+  # The sensor wraps its payload in STX/ETX control characters, but they are
+  # stripped by the time the record reaches the parser, so the format matches
+  # the bare comma-separated form seen on the wire:
+  #   A,304,011.26,M,60,0B
+  SKQ_WindGill:
+    category: "device_type"
+    description: "Gill ultrasonic wind sensor, relative output"
+    format:
+      GILL: "{Status:w},{WindAngle:g},{WindSpeed:g},{WindSpeedUnits:w},{Quality:od},{Checksum:w}"
+    fields:
+      Status:
+        description: "Sensor status code"
+      WindAngle:
+        units: "degrees"
+        description: "Relative wind angle"
+      WindSpeed:
+        description: "Wind speed, units given by WindSpeedUnits"
+      WindSpeedUnits:
+        description: "M = m/s"
+      Quality:
+        description: "Reported data quality"
+
+  # [PROVISIONAL] Metek uSonic-3 Omni 3D sonic anemometer.
+  #   M:x =   944 y =  -631 z =    40 t =  1667 dq=   100
+  # x/y/z are orthogonal wind components and t is sonic temperature, both in
+  # hundredths of the base unit on this instrument family; dq is a percentage
+  # data-quality figure. Scaling is NOT applied here - values are parsed raw.
+  SKQ_MetekUSonic:
+    category: "device_type"
+    description: "Metek uSonic-3 Omni 3D ultrasonic anemometer"
+    # Values are space-padded to a fixed width, so each field is declared
+    # right-aligned (':>') to absorb the leading whitespace.
+    format:
+      METEK: "M:x ={WindX:>g} y ={WindY:>g} z ={WindZ:>g} t ={SonicTemp:>g} dq={DataQuality:>g}"
+    fields:
+      WindX:
+        description: "Wind component, x axis (raw counts; typically cm/s)"
+      WindY:
+        description: "Wind component, y axis (raw counts; typically cm/s)"
+      WindZ:
+        description: "Wind component, z axis (raw counts; typically cm/s)"
+      SonicTemp:
+        description: "Sonic temperature (raw counts; typically 0.01 degC)"
+      DataQuality:
+        units: "percent"
+        description: "Data quality indicator, 0-100"
+
+  ##############################################################################
+  # HEADING / ATTITUDE
+  ##############################################################################
+
+  # [NMEA] MGC-series gyrocompass. Sikuliaq's gyros emit the $MG.. talker,
+  # which the stock 'Gyrocompass' device_type does not match (it hardcodes
+  # $HEHDT/$HEROT). PSXN,20 and PSXN,23 are Seapath-proprietary attitude
+  # sentences also emitted by these units.
+  SKQ_GyroMGC:
+    category: "device_type"
+    description: "MGC R3 gyrocompass (gyro_1, gyro_2)"
+    format:
+      HDT: "${:2l}HDT,{HeadingTrue:g},T*{Checksum:x}"
+      THS: "${:2l}THS,{HeadingTrue:g},{ModeIndicator:w}*{Checksum:x}"
+      ROT: "${:2l}ROT,{RateOfTurn:g},{Status:w}*{Checksum:x}"
+      HCR: "${:2l}HCR,{HeadingTrue:g},{Status:w},{CorrectionStatus:w},{Deviation:og}*{Checksum:x}"
+      PSXN20: "$PSXN,20,{HorizQual:d},{HeightQual:d},{HeadingQual:d},{RollPitchQual:d}*{Checksum:x}"
+      PSXN23: "$PSXN,23,{Roll:og},{Pitch:og},{HeadingTrue:og},{Heave:og}*{Checksum:x}"
+    fields:
+      HeadingTrue:
+        units: "degrees"
+        description: "True heading"
+      ModeIndicator:
+        description: "A = autonomous, E = estimated, M = manual, V = invalid"
+      RateOfTurn:
+        units: "degrees/minute"
+        description: "Rate of turn, negative = bow to port"
+      Status:
+        description: "A = valid, V = invalid"
+      CorrectionStatus:
+        description: "Correction applied status (MGHCR)"
+      Deviation:
+        units: "degrees"
+        description: "Heading deviation/correction (MGHCR)"
+      HorizQual:
+        description: "Horizontal position quality, 0-3"
+      HeightQual:
+        description: "Height quality, 0-3"
+      HeadingQual:
+        description: "Heading quality, 0-3"
+      RollPitchQual:
+        description: "Roll/pitch quality, 0-3"
+      Roll:
+        units: "degrees"
+        description: "Roll, positive = port side up"
+      Pitch:
+        units: "degrees"
+        description: "Pitch, positive = bow up"
+      Heave:
+        units: "meters"
+        description: "Heave, positive = up"
+
+  ##############################################################################
+  # POSITION
+  ##############################################################################
+
+  # [NMEA] Generic GNSS receiver. Covers gnss_cnav (CNAV) and gnss_mps865
+  # (Trimble MPS865). The ${:2l} talker wildcard matches $GP.., $GN.. etc.
+  SKQ_GNSS:
+    category: "device_type"
+    description: "GNSS receiver - GGA/GLL/RMC/VTG/ZDA/HDT"
+    format:
+      GGA: "${:2l}GGA,{GPSTime:f},{Latitude:nlat},{NorS:w},{Longitude:nlat},{EorW:w},{FixQuality:d},{NumSats:d},{HDOP:of},{AntennaHeight:of},M,{GeoidHeight:of},M,{LastDGPSUpdate:of},{DGPSStationID:os}*{Checksum:x}"
+      GLL: "${:2l}GLL,{Latitude:nlat},{NorS:w},{Longitude:nlat},{EorW:w},{GPSTime:f},{Status:w},{Mode:ow}*{Checksum:x}"
+      # Two RMC variants are on the wire: gnss_cnav sends NMEA 4.1 with a
+      # trailing NavStatus field, ins_seapath_position sends the older form
+      # that ends at the mode indicator.
+      RMC: "${:2l}RMC,{GPSTime:f},{Status:w},{Latitude:nlat},{NorS:w},{Longitude:nlat},{EorW:w},{SpeedKt:og},{CourseTrue:og},{GPSDate:w},{MagVar:og},{MagVarEorW:ow},{Mode:ow},{NavStatus:ow}*{Checksum:x}"
+      RMC_no_navstatus: "${:2l}RMC,{GPSTime:f},{Status:w},{Latitude:nlat},{NorS:w},{Longitude:nlat},{EorW:w},{SpeedKt:og},{CourseTrue:og},{GPSDate:w},{MagVar:og},{MagVarEorW:ow},{Mode:ow}*{Checksum:x}"
+      VTG: "${:2l}VTG,{CourseTrue:og},T,{CourseMag:og},M,{SpeedKt:og},N,{SpeedKm:og},K,{Mode:ow}*{Checksum:x}"
+      ZDA: "${:2l}ZDA,{GPSTime:f},{GPSDay:d},{GPSMonth:d},{GPSYear:d},{LocalHours:od},{LocalZone:od}*{Checksum:x}"
+      HDT: "${:2l}HDT,{HeadingTrue:g},T*{Checksum:x}"
+      # Seapath-proprietary attitude, also emitted by ins_seapath_position.
+      PSXN20: "$PSXN,20,{HorizQual:d},{HeightQual:d},{HeadingQual:d},{RollPitchQual:d}*{Checksum:x}"
+      PSXN23: "$PSXN,23,{Roll:og},{Pitch:og},{HeadingTrue:og},{Heave:og}*{Checksum:x}"
+    fields:
+      HorizQual:
+        description: "Horizontal position quality, 0-3"
+      HeightQual:
+        description: "Height quality, 0-3"
+      HeadingQual:
+        description: "Heading quality, 0-3"
+      RollPitchQual:
+        description: "Roll/pitch quality, 0-3"
+      Roll:
+        units: "degrees"
+        description: "Roll, positive = port side up"
+      Pitch:
+        units: "degrees"
+        description: "Pitch, positive = bow up"
+      Heave:
+        units: "meters"
+        description: "Heave, positive = up"
+      GPSTime:
+        description: "UTC time as HHMMSS.ss"
+      GPSDate:
+        description: "UTC date as DDMMYY"
+      Latitude:
+        units: "degrees north"
+        description: "Latitude, decimal degrees"
+      NorS:
+        description: "N or S"
+      Longitude:
+        units: "degrees east"
+        description: "Longitude, decimal degrees"
+      EorW:
+        description: "E or W"
+      FixQuality:
+        description: "0 = invalid, 1 = GPS, 2 = DGPS, 4 = RTK fixed, 5 = RTK float"
+      NumSats:
+        description: "Number of satellites in use"
+      HDOP:
+        description: "Horizontal dilution of precision"
+      AntennaHeight:
+        units: "meters"
+        description: "Antenna altitude above mean sea level"
+      GeoidHeight:
+        units: "meters"
+        description: "Geoidal separation"
+      LastDGPSUpdate:
+        units: "seconds"
+        description: "Age of differential correction"
+      DGPSStationID:
+        description: "Differential reference station id"
+      Status:
+        description: "A = valid, V = invalid"
+      Mode:
+        description: "Positioning mode indicator"
+      NavStatus:
+        description: "Navigational status (NMEA 4.1+)"
+      SpeedKt:
+        units: "knots"
+        description: "Speed over ground"
+      SpeedKm:
+        units: "km/hour"
+        description: "Speed over ground"
+      CourseTrue:
+        units: "degrees"
+        description: "Course over ground, true"
+      CourseMag:
+        units: "degrees"
+        description: "Course over ground, magnetic"
+      MagVar:
+        units: "degrees"
+        description: "Magnetic variation"
+      MagVarEorW:
+        description: "Magnetic variation direction"
+      HeadingTrue:
+        units: "degrees"
+        description: "True heading"
+      LocalHours:
+        description: "Local zone hours"
+      LocalZone:
+        description: "Local zone minutes"
+
+  ##############################################################################
+  # SPEED / DEPTH
+  ##############################################################################
+
+  # [NMEA] Doppler speed log. Two variants are seen on Sikuliaq: the full
+  # 10-field VBW from 'speedlog', and a truncated 6-field form from
+  # 'adcp_speedlog'. Both are listed; the parser tries each in turn.
+  SKQ_Speedlog:
+    category: "device_type"
+    description: "Doppler speed log - NMEA VBW/DPT"
+    format:
+      VBW_full: "${:2l}VBW,{LongWaterSpeed:og},{TransWaterSpeed:og},{WaterSpeedStatus:ow},{LongGroundSpeed:og},{TransGroundSpeed:og},{GroundSpeedStatus:ow},{SternWaterSpeed:og},{SternWaterStatus:ow},{SternGroundSpeed:og},{SternGroundStatus:ow}*{Checksum:x}"
+      VBW_short: "${:2l}VBW,{LongWaterSpeed:og},{TransWaterSpeed:og},{WaterSpeedStatus:ow},{LongGroundSpeed:og},{TransGroundSpeed:og},{GroundSpeedStatus:ow}*{Checksum:x}"
+      DPT: "${:2l}DPT,{Depth:og},{TransducerOffset:og},{MaxRange:og}*{Checksum:x}"
+    fields:
+      LongWaterSpeed:
+        units: "knots"
+        description: "Longitudinal water speed, negative = astern"
+      TransWaterSpeed:
+        units: "knots"
+        description: "Transverse water speed, negative = port"
+      WaterSpeedStatus:
+        description: "A = valid, V = invalid"
+      LongGroundSpeed:
+        units: "knots"
+        description: "Longitudinal ground speed, negative = astern"
+      TransGroundSpeed:
+        units: "knots"
+        description: "Transverse ground speed, negative = port"
+      GroundSpeedStatus:
+        description: "A = valid, V = invalid"
+      SternWaterSpeed:
+        units: "knots"
+        description: "Stern transverse water speed"
+      SternWaterStatus:
+        description: "A = valid, V = invalid"
+      SternGroundSpeed:
+        units: "knots"
+        description: "Stern transverse ground speed"
+      SternGroundStatus:
+        description: "A = valid, V = invalid"
+      Depth:
+        units: "meters"
+        description: "Water depth relative to transducer"
+      TransducerOffset:
+        units: "meters"
+        description: "Offset from transducer; positive = to waterline"
+      MaxRange:
+        units: "meters"
+        description: "Maximum range scale in use"
+
+  # [NMEA] Bridge echosounders. $SDDPT / $SDDBT
+  SKQ_EchoSounder:
+    category: "device_type"
+    description: "Bridge echosounder - NMEA DPT/DBT"
+    format:
+      DPT: "${:2l}DPT,{Depth:og},{TransducerOffset:og},{MaxRange:og}*{Checksum:x}"
+      DBT: "${:2l}DBT,{DepthFt:og},f,{DepthM:og},M,{DepthFath:og},F*{Checksum:x}"
+    fields:
+      Depth:
+        units: "meters"
+        description: "Depth relative to transducer"
+      TransducerOffset:
+        units: "meters"
+        description: "Transducer offset"
+      MaxRange:
+        units: "meters"
+        description: "Maximum range scale in use"
+      DepthFt:
+        units: "feet"
+        description: "Depth below transducer"
+      DepthM:
+        units: "meters"
+        description: "Depth below transducer"
+      DepthFath:
+        units: "fathoms"
+        description: "Depth below transducer"
+
+  # [NMEA] Kongsberg multibeam centerbeam depth. $EMDPT / $EMDBS
+  SKQ_MB_Centerbeam:
+    category: "device_type"
+    description: "Kongsberg EM multibeam centerbeam depth"
+    format:
+      EMDPT: "$EMDPT,{Depth:og},{TransducerOffset:og},{MaxRange:og}*{Checksum:x}"
+      EMDBS: "$EMDBS,{DepthFt:og},f,{DepthM:og},M,{DepthFath:og},F*{Checksum:x}"
+    fields:
+      Depth:
+        units: "meters"
+        description: "Centerbeam depth relative to transducer"
+      TransducerOffset:
+        units: "meters"
+        description: "Transducer offset"
+      MaxRange:
+        units: "meters"
+        description: "Maximum range scale in use"
+      DepthFt:
+        units: "feet"
+        description: "Centerbeam depth"
+      DepthM:
+        units: "meters"
+        description: "Centerbeam depth"
+      DepthFath:
+        units: "fathoms"
+        description: "Centerbeam depth"
+
+  # [NMEA] EK80 depth. $EKDBS
+  SKQ_EK80Depth:
+    category: "device_type"
+    description: "Simrad EK80 depth"
+    format:
+      EKDBS: "$EKDBS,{DepthFt:og},f,{DepthM:og},M,{DepthFath:og},F*{Checksum:x}"
+    fields:
+      DepthFt:
+        units: "feet"
+        description: "Depth below transducer"
+      DepthM:
+        units: "meters"
+        description: "Depth below transducer"
+      DepthFath:
+        units: "fathoms"
+        description: "Depth below transducer"
+
+  # [PROVISIONAL] WH300 centerboard transducer pressure/depth. $PMSG,5461*23
+  # A single integer of unconfirmed scaling - it is NOT meters as-is.
+  SKQ_XducerDepth:
+    category: "device_type"
+    description: "WH300 centerboard transducer depth sensor"
+    format:
+      PMSG: "$PMSG,{TransducerDepthRaw:d}*{Checksum:x}"
+    fields:
+      TransducerDepthRaw:
+        description: "Raw transducer depth counts - scaling unconfirmed"
+
+  ##############################################################################
+  # THERMOSALINOGRAPH / WATER PROPERTIES
+  ##############################################################################
+
+  # [PROVISIONAL] Krohne flow meter.  0.579,6.14,28.65,0.52265
+  SKQ_FlowKrohne:
+    category: "device_type"
+    description: "Krohne flow meter"
+    format: "{FlowRate:og},{FlowVelocity:og},{FlowTemp:og},{FlowTotalizer:og}"
+    fields:
+      FlowRate:
+        description: "Flow rate - units unconfirmed"
+      FlowVelocity:
+        description: "Flow velocity - units unconfirmed"
+      FlowTemp:
+        units: "deg C"
+        description: "Fluid temperature - unconfirmed"
+      FlowTotalizer:
+        description: "Totalizer / accumulated volume - unconfirmed"
+
+  # [PROVISIONAL] Total dissolved gas pressure.
+  #   P 2026,08,23,22,14,29,19.25,1048.52,12.4
+  SKQ_TDGP:
+    category: "device_type"
+    description: "Total dissolved gas pressure sensor"
+    format: "P {Year:d},{Month:d},{Day:d},{Hour:d},{Minute:d},{Second:d},{TDGPTemp:og},{TDGPPressure:og},{TDGPVoltage:og}"
+    fields:
+      Year:
+        description: "Sample year, sensor clock"
+      Month:
+        description: "Sample month, sensor clock"
+      Day:
+        description: "Sample day, sensor clock"
+      Hour:
+        description: "Sample hour, sensor clock"
+      Minute:
+        description: "Sample minute, sensor clock"
+      Second:
+        description: "Sample second, sensor clock"
+      TDGPTemp:
+        units: "deg C"
+        description: "Temperature"
+      TDGPPressure:
+        units: "mbar"
+        description: "Total dissolved gas pressure"
+      TDGPVoltage:
+        units: "volts"
+        description: "Supply voltage - unconfirmed"
+
+  # [PROVISIONAL] Pyrometer CT15.10 - "14.87 C"
+  SKQ_Pyrometer_CT15:
+    category: "device_type"
+    description: "Optris CT15.10 infrared pyrometer"
+    format: "{SurfaceTemp:g} {TempUnits:w}"
+    fields:
+      SurfaceTemp:
+        units: "deg C"
+        description: "Sea surface skin temperature"
+      TempUnits:
+        description: "Temperature units, normally C"
+
+  ##############################################################################
+  # OPTICS / RADIOMETRY
+  ##############################################################################
+
+  # [PROVISIONAL] Sea-Bird ECO Triplet fluorometer. The instrument emits its
+  # own date and time, then wavelength/count pairs:
+  #   08/23/26  22:10:59  650  213  695  121  460  87  518
+  # The trailing value is the thermistor count.
+  SKQ_FluoroTriplet:
+    category: "device_type"
+    description: "Sea-Bird ECO Triplet fluorometer"
+    # The instrument's own date/time is broken into components rather than
+    # captured whole: ':w' cannot match '08/23/26' because '/' is not a word
+    # character. Two variants are listed - the wet-wall unit reports three
+    # channels plus a thermistor, the CTD unit reports fewer.
+    format:
+      - "{SensorMonth:d}/{SensorDay:d}/{SensorYear:d}\t{SensorHour:d}:{SensorMinute:d}:{SensorSecond:d}\t{Wavelength1:d}\t{Value1:d}\t{Wavelength2:d}\t{Value2:d}\t{Wavelength3:d}\t{Value3:d}\t{Thermistor:d}"
+      - "{SensorMonth:d}/{SensorDay:d}/{SensorYear:d}\t{SensorHour:d}:{SensorMinute:d}:{SensorSecond:d}\t{Wavelength1:d}\t{Value1:d}\t{Wavelength2:d}\t{Value2:d}"
+    fields:
+      SensorMonth:
+        description: "Instrument clock month"
+      SensorDay:
+        description: "Instrument clock day"
+      SensorYear:
+        description: "Instrument clock year, two digit"
+      SensorHour:
+        description: "Instrument clock hour"
+      SensorMinute:
+        description: "Instrument clock minute"
+      SensorSecond:
+        description: "Instrument clock second"
+      Wavelength1:
+        units: "nm"
+        description: "Channel 1 wavelength"
+      Value1:
+        description: "Channel 1 raw counts"
+      Wavelength2:
+        units: "nm"
+        description: "Channel 2 wavelength"
+      Value2:
+        description: "Channel 2 raw counts"
+      Wavelength3:
+        units: "nm"
+        description: "Channel 3 wavelength"
+      Value3:
+        description: "Channel 3 raw counts"
+      Thermistor:
+        description: "Thermistor raw counts"
+
+  # [PROVISIONAL] Kipp & Zonen SGR4 pyrgeometer (downwelling longwave).
+  #   611,133,-6.87,402.08,18.27,12.04,0,1,0
+  SKQ_Pyrgeometer_SGR4:
+    category: "device_type"
+    description: "Kipp & Zonen SGR4 pyrgeometer"
+    format: "{SerialNumber:d},{SampleCount:d},{NetRadiation:og},{LongwaveDown:og},{BodyTemp:og},{SupplyVoltage:og},{Status1:d},{Status2:d},{Status3:d}"
+    fields:
+      SerialNumber:
+        description: "Instrument serial/model identifier"
+      SampleCount:
+        description: "Sample or sequence counter"
+      NetRadiation:
+        units: "W/m^2"
+        description: "Net longwave radiation - unconfirmed"
+      LongwaveDown:
+        units: "W/m^2"
+        description: "Downwelling longwave irradiance - unconfirmed"
+      BodyTemp:
+        units: "deg C"
+        description: "Instrument body temperature"
+      SupplyVoltage:
+        units: "volts"
+        description: "Supply voltage"
+      Status1:
+        description: "Status flag 1"
+      Status2:
+        description: "Status flag 2"
+      Status3:
+        description: "Status flag 3"
+
+  # [PROVISIONAL] Kipp & Zonen SMP21 pyranometer (downwelling shortwave).
+  #   605,195,177.8,18.0,12.0,1,1,0
+  SKQ_Pyranometer_SMP21:
+    category: "device_type"
+    description: "Kipp & Zonen SMP21 pyranometer"
+    format: "{SerialNumber:d},{SampleCount:d},{ShortwaveDown:og},{BodyTemp:og},{SupplyVoltage:og},{Status1:d},{Status2:d},{Status3:d}"
+    fields:
+      SerialNumber:
+        description: "Instrument serial/model identifier"
+      SampleCount:
+        description: "Sample or sequence counter"
+      ShortwaveDown:
+        units: "W/m^2"
+        description: "Downwelling shortwave irradiance"
+      BodyTemp:
+        units: "deg C"
+        description: "Instrument body temperature"
+      SupplyVoltage:
+        units: "volts"
+        description: "Supply voltage"
+      Status1:
+        description: "Status flag 1"
+      Status2:
+        description: "Status flag 2"
+      Status3:
+        description: "Status flag 3"
+
+  # [PROVISIONAL] Biospherical QSR-2150A PAR sensor.
+  #   866.876, 12.74, 7.494
+  SKQ_PAR_QSR2150A:
+    category: "device_type"
+    description: "Biospherical QSR-2150A PAR sensor"
+    format: "{PAR:og},{SupplyVoltage:og},{SensorVoltage:og}"
+    fields:
+      PAR:
+        units: "uE/m^2/s"
+        description: "Photosynthetically active radiation"
+      SupplyVoltage:
+        units: "volts"
+        description: "Supply voltage"
+      SensorVoltage:
+        units: "volts"
+        description: "Sensor output voltage - unconfirmed"
+
+  ##############################################################################
+  # CHEMISTRY
+  ##############################################################################
+
+  # [PROVISIONAL] Sea-Bird SUNA nitrate sensor, SATSLF frame.
+  SKQ_Nitrate_SUNA:
+    category: "device_type"
+    description: "Sea-Bird SUNA V2 nitrate sensor"
+    format: "SATSLF{SerialNumber:d},{SampleDate:d},{SampleTime:og},{Nitrate:og},{NitrogenMg:og},{Absorbance254:og},{Absorbance350:og},{Bromide:og},{SpectrumAvg:od}"
+    fields:
+      SerialNumber:
+        description: "Instrument serial number"
+      SampleDate:
+        description: "Sample date as YYYYDDD (year and day-of-year)"
+      SampleTime:
+        units: "hours"
+        description: "Decimal hour of day"
+      Nitrate:
+        units: "uMol/L"
+        description: "Nitrate concentration"
+      NitrogenMg:
+        units: "mg/L"
+        description: "Nitrogen in nitrate"
+      Absorbance254:
+        description: "Absorbance at 254 nm"
+      Absorbance350:
+        description: "Absorbance at 350 nm"
+      Bromide:
+        units: "mg/L"
+        description: "Bromide trace - unconfirmed"
+      SpectrumAvg:
+        description: "Spectrum average - unconfirmed"
+
+  # [PROVISIONAL] Aanderaa Optode 4330, raw output.
+  #   4330 3594 222.949 100.855 22.736 28.536 29.136 36.328 7.192 968.1 843.7 155.3
+  SKQ_Optode4330:
+    category: "device_type"
+    description: "Aanderaa Optode 4330 dissolved oxygen sensor"
+    format: "{ModelNumber:d}\t{SerialNumber:d}\t{O2Concentration:og}\t{AirSaturation:og}\t{Temp:og}\t{CalPhase:og}\t{TCPhase:og}\t{C1RPh:og}\t{C2RPh:og}\t{C1Amp:og}\t{C2Amp:og}\t{RawTemp:og}"
+    fields:
+      ModelNumber:
+        description: "Instrument model number"
+      SerialNumber:
+        description: "Instrument serial number"
+      O2Concentration:
+        units: "uMol/L"
+        description: "Dissolved oxygen concentration"
+      AirSaturation:
+        units: "percent"
+        description: "Oxygen air saturation"
+      Temp:
+        units: "deg C"
+        description: "Optode temperature"
+      CalPhase:
+        units: "degrees"
+        description: "Calibrated phase"
+      TCPhase:
+        units: "degrees"
+        description: "Temperature-compensated phase"
+      C1RPh:
+        units: "degrees"
+        description: "Phase, blue excitation"
+      C2RPh:
+        units: "degrees"
+        description: "Phase, red excitation"
+      C1Amp:
+        description: "Amplitude, blue excitation"
+      C2Amp:
+        description: "Amplitude, red excitation"
+      RawTemp:
+        description: "Raw temperature counts"
+
+  # [PROVISIONAL] Salinity-corrected optode product stream.
+  SKQ_Optode4330_Cor:
+    category: "device_type"
+    description: "Salinity-corrected oxygen from Optode 4330"
+    format: "{ModelNumber:d},{SerialNumber:d},{O2Corrected:og},{O2Raw:og},{AirSaturation:og},{Offset1:og},{Offset2:og},{Offset3:og},{Salinity:og},{Latitude:og},{Longitude:og}"
+    fields:
+      ModelNumber:
+        description: "Instrument model number"
+      SerialNumber:
+        description: "Instrument serial number"
+      O2Corrected:
+        units: "uMol/L"
+        description: "Salinity-corrected dissolved oxygen"
+      O2Raw:
+        units: "uMol/L"
+        description: "Uncorrected dissolved oxygen"
+      AirSaturation:
+        units: "percent"
+        description: "Oxygen air saturation"
+      Offset1:
+        description: "Correction term 1 - unconfirmed"
+      Offset2:
+        description: "Correction term 2 - unconfirmed"
+      Offset3:
+        description: "Correction term 3 - unconfirmed"
+      Salinity:
+        units: "PSU"
+        description: "Salinity used for correction"
+      Latitude:
+        units: "degrees north"
+        description: "Latitude used for correction"
+      Longitude:
+        units: "degrees east"
+        description: "Longitude used for correction"
+
+  ##############################################################################
+  # OTHER
+  ##############################################################################
+
+  # [PROVISIONAL] Optical Scientific ORG-815-DS rain gauge.
+  #   R- .205 000.005 01*0 4999 0081 0040 +12
+  SKQ_RainORG815:
+    category: "device_type"
+    description: "Optical Scientific ORG-815-DS optical rain gauge"
+    format: "R{RainFlag:w} {RainRate:og} {RainAccumulation:og} {RainStatus:w}*{Checksum:w} {Scintillation:od} {OpticalPower:od} {Extinction:od} {Temp:og}"
+    fields:
+      RainFlag:
+        description: "Leading status character"
+      RainRate:
+        units: "mm/hour"
+        description: "Instantaneous rain rate"
+      RainAccumulation:
+        units: "mm"
+        description: "Accumulated rainfall"
+      RainStatus:
+        description: "Instrument status code"
+      Scintillation:
+        description: "Scintillation counts - unconfirmed"
+      OpticalPower:
+        description: "Optical received power - unconfirmed"
+      Extinction:
+        description: "Extinction measure - unconfirmed"
+      Temp:
+        units: "deg C"
+        description: "Instrument temperature"
+
+  # [PROVISIONAL] Vaisala MET4A via NMEA XDR transducer sentence.
+  SKQ_MET4A:
+    category: "device_type"
+    description: "Vaisala MET4A meteorological sensor, NMEA XDR"
+    format:
+      XDR: "${:2l}XDR,PRESS,{Pressure:og},bar,{PressSerial:nc},TEMP,{AirTemp:og},C,RH,{RelHumidity:og},%RH,{RHSerial:nc},FAN,{FanStatus:od}"
+    fields:
+      Pressure:
+        units: "bar"
+        description: "Barometric pressure"
+      PressSerial:
+        description: "Pressure sensor serial number"
+      AirTemp:
+        units: "deg C"
+        description: "Air temperature"
+      RelHumidity:
+        units: "percent"
+        description: "Relative humidity"
+      RHSerial:
+        description: "Humidity sensor serial number"
+      FanStatus:
+        description: "Aspirator fan status"
+
+  # [PROVISIONAL] DGS AT1M gravimeter, processed output. This is a long CSV
+  # whose column order is instrument- and installation-specific. Only the
+  # leading counts are named; confirm the full column list against the ship's
+  # format_descriptions file before adding more.
+  SKQ_Grav_DGS:
+    category: "device_type"
+    description: "DGS AT1M gravimeter, processed stream"
+    format: "{RawGravity:og},{GravityCorrected:og},{Rest:ns}"
+    fields:
+      RawGravity:
+        description: "Raw gravity counts - unconfirmed"
+      GravityCorrected:
+        description: "Corrected gravity counts - unconfirmed"
+      Rest:
+        description: "Remaining unparsed columns - see format_descriptions file"
+
+################################################################################
+devices:
+
+  ##############################################################################
+  # WIND
+  ##############################################################################
+  wind_mast_port:
+    category: "device"
+    device_type: "SKQ_WindRelative"
+    description: "Ship wind sensor, port mast - relative"
+    fields:
+      WindAngle: "PortRelWindDir"
+      WindSpeed: "PortRelWindSpeed"
+      WindSpeedUnits: "PortRelWindSpeedUnits"
+      Status: "PortRelWindStatus"
+
+  wind_mast_stbd:
+    category: "device"
+    device_type: "SKQ_WindRelative"
+    description: "Ship wind sensor, starboard mast - relative"
+    fields:
+      WindAngle: "StbdRelWindDir"
+      WindSpeed: "StbdRelWindSpeed"
+      WindSpeedUnits: "StbdRelWindSpeedUnits"
+      Status: "StbdRelWindStatus"
+
+  wind_mast_port_true:
+    category: "device"
+    device_type: "SKQ_WindTrue"
+    description: "Ship wind sensor, port mast - true"
+    fields:
+      WindDirTrue: "PortTrueWindDir"
+      WindSpeedKt: "PortTrueWindSpeedKt"
+      WindSpeedMs: "PortTrueWindSpeedMs"
+
+  wind_mast_stbd_true:
+    category: "device"
+    device_type: "SKQ_WindTrue"
+    description: "Ship wind sensor, starboard mast - true"
+    fields:
+      WindDirTrue: "StbdTrueWindDir"
+      WindSpeedKt: "StbdTrueWindSpeedKt"
+      WindSpeedMs: "StbdTrueWindSpeedMs"
+
+  wind_gill_fwdmast:
+    category: "device"
+    device_type: "SKQ_WindGill"
+    description: "Gill ultrasonic wind sensor, forward mast - relative"
+    fields:
+      WindAngle: "GillRelWindDir"
+      WindSpeed: "GillRelWindSpeed"
+      WindSpeedUnits: "GillRelWindSpeedUnits"
+      Status: "GillWindStatus"
+
+  wind_gill_fwdmast_true:
+    category: "device"
+    device_type: "SKQ_WindTrue"
+    description: "Gill ultrasonic wind sensor, forward mast - true"
+    fields:
+      WindDirTrue: "GillTrueWindDir"
+      WindSpeedKt: "GillTrueWindSpeedKt"
+      WindSpeedMs: "GillTrueWindSpeedMs"
+
+  wind_metek_fwdmast:
+    category: "device"
+    device_type: "SKQ_MetekUSonic"
+    description: "Metek uSonic-3 Omni 3D wind sensor, forward mast"
+    fields:
+      WindX: "MetekWindX"
+      WindY: "MetekWindY"
+      WindZ: "MetekWindZ"
+      SonicTemp: "MetekSonicTemp"
+      DataQuality: "MetekDataQuality"
+
+  ##############################################################################
+  # HEADING / ATTITUDE / POSITION
+  ##############################################################################
+  gyro_1:
+    category: "device"
+    device_type: "SKQ_GyroMGC"
+    description: "MGC R3 gyrocompass 1"
+    fields:
+      HeadingTrue: "Gyro1HeadingTrue"
+      RateOfTurn: "Gyro1RateOfTurn"
+      Roll: "Gyro1Roll"
+      Pitch: "Gyro1Pitch"
+      Heave: "Gyro1Heave"
+      HorizQual: "Gyro1HorizQual"
+      HeightQual: "Gyro1HeightQual"
+      HeadingQual: "Gyro1HeadingQual"
+      RollPitchQual: "Gyro1RollPitchQual"
+
+  gyro_2:
+    category: "device"
+    device_type: "SKQ_GyroMGC"
+    description: "MGC R3 gyrocompass 2"
+    fields:
+      HeadingTrue: "Gyro2HeadingTrue"
+      RateOfTurn: "Gyro2RateOfTurn"
+      Roll: "Gyro2Roll"
+      Pitch: "Gyro2Pitch"
+      Heave: "Gyro2Heave"
+      HorizQual: "Gyro2HorizQual"
+      HeightQual: "Gyro2HeightQual"
+      HeadingQual: "Gyro2HeadingQual"
+      RollPitchQual: "Gyro2RollPitchQual"
+
+  # NOT the stock Seapath330: that device_type defines GGA/HDT/VTG/ZDA/RMC and
+  # the PSXN sentences, but no GLL - and ins_seapath_position emits $GPGLL.
+  # SKQ_GNSS covers everything it sends, including the PSXN attitude pair.
+  ins_seapath_position:
+    category: "device"
+    device_type: "SKQ_GNSS"
+    description: "Kongsberg Seapath INS - position and attitude"
+    fields:
+      GPSTime: "SeapathGPSTime"
+      Latitude: "SeapathLatitude"
+      NorS: "SeapathNorS"
+      Longitude: "SeapathLongitude"
+      EorW: "SeapathEorW"
+      FixQuality: "SeapathFixQuality"
+      NumSats: "SeapathNumSats"
+      HDOP: "SeapathHDOP"
+      AntennaHeight: "SeapathAntennaHeight"
+      CourseTrue: "SeapathCourseTrue"
+      SpeedKt: "SeapathSpeedKt"
+      HeadingTrue: "SeapathHeadingTrue"
+      Roll: "SeapathRoll"
+      Pitch: "SeapathPitch"
+      Heave: "SeapathHeave"
+      HorizQual: "SeapathHorizQual"
+      HeightQual: "SeapathHeightQual"
+      HeadingQual: "SeapathHeadingQual"
+      RollPitchQual: "SeapathRollPitchQual"
+      GPSDate: "SeapathGPSDate"
+      Status: "SeapathStatus"
+
+  gnss_cnav:
+    category: "device"
+    device_type: "SKQ_GNSS"
+    description: "CNAV GNSS receiver"
+    fields:
+      GPSTime: "CnavGPSTime"
+      GPSDate: "CnavGPSDate"
+      Latitude: "CnavLatitude"
+      NorS: "CnavNorS"
+      Longitude: "CnavLongitude"
+      EorW: "CnavEorW"
+      FixQuality: "CnavFixQuality"
+      NumSats: "CnavNumSats"
+      HDOP: "CnavHDOP"
+      AntennaHeight: "CnavAntennaHeight"
+      SpeedKt: "CnavSpeedKt"
+      CourseTrue: "CnavCourseTrue"
+
+  gnss_mps865:
+    category: "device"
+    device_type: "SKQ_GNSS"
+    description: "Trimble MPS865 GNSS heading receiver"
+    fields:
+      GPSTime: "Mps865GPSTime"
+      Latitude: "Mps865Latitude"
+      NorS: "Mps865NorS"
+      Longitude: "Mps865Longitude"
+      EorW: "Mps865EorW"
+      FixQuality: "Mps865FixQuality"
+      NumSats: "Mps865NumSats"
+      HeadingTrue: "Mps865HeadingTrue"
+      CourseTrue: "Mps865CourseTrue"
+      SpeedKt: "Mps865SpeedKt"
+
+  ##############################################################################
+  # SPEED / DEPTH
+  ##############################################################################
+  speedlog:
+    category: "device"
+    device_type: "SKQ_Speedlog"
+    description: "Doppler speed log"
+    fields:
+      LongWaterSpeed: "SpeedlogLongWaterSpeed"
+      TransWaterSpeed: "SpeedlogTransWaterSpeed"
+      LongGroundSpeed: "SpeedlogLongGroundSpeed"
+      TransGroundSpeed: "SpeedlogTransGroundSpeed"
+      Depth: "SpeedlogDepth"
+      # $VDDPT routinely carries an empty depth and only an offset; map these
+      # so the sentence still yields a field rather than parsing to nothing.
+      TransducerOffset: "SpeedlogTransducerOffset"
+      MaxRange: "SpeedlogMaxRange"
+
+  adcp_speedlog:
+    category: "device"
+    device_type: "SKQ_Speedlog"
+    description: "ADCP-derived speed log"
+    fields:
+      LongWaterSpeed: "AdcpLongWaterSpeed"
+      TransWaterSpeed: "AdcpTransWaterSpeed"
+      LongGroundSpeed: "AdcpLongGroundSpeed"
+      TransGroundSpeed: "AdcpTransGroundSpeed"
+
+  sb_echosounder_1:
+    category: "device"
+    device_type: "SKQ_EchoSounder"
+    description: "Bridge echosounder 1"
+    fields:
+      Depth: "Echosounder1Depth"
+      DepthM: "Echosounder1DepthM"
+
+  sb_echosounder_2:
+    category: "device"
+    device_type: "SKQ_EchoSounder"
+    description: "Bridge echosounder 2"
+    fields:
+      Depth: "Echosounder2Depth"
+      DepthM: "Echosounder2DepthM"
+
+  mb_em304_centerbeam:
+    category: "device"
+    device_type: "SKQ_MB_Centerbeam"
+    description: "Kongsberg EM304 centerbeam depth"
+    fields:
+      Depth: "EM304CenterbeamDepth"
+      DepthM: "EM304CenterbeamDepthM"
+
+  mb_em710_centerbeam:
+    category: "device"
+    device_type: "SKQ_MB_Centerbeam"
+    description: "Kongsberg EM710 centerbeam depth"
+    fields:
+      Depth: "EM710CenterbeamDepth"
+      DepthM: "EM710CenterbeamDepthM"
+
+  ek80_depth:
+    category: "device"
+    device_type: "SKQ_EK80Depth"
+    description: "Simrad EK80 depth"
+    fields:
+      DepthM: "EK80DepthM"
+      DepthFt: "EK80DepthFt"
+
+  wh300_xducer_depth:
+    category: "device"
+    device_type: "SKQ_XducerDepth"
+    description: "WH300 centerboard transducer depth"
+    fields:
+      TransducerDepthRaw: "WH300XducerDepthRaw"
+
+  ##############################################################################
+  # THERMOSALINOGRAPH / WATER PROPERTIES
+  ##############################################################################
+  tsg_sbe45_fwd:
+    category: "device"
+    device_type: "TSG_SBE45"
+    description: "SBE45 thermosalinograph, wet wall"
+    fields:
+      Temp: "Tsg1Temp"
+      Conductivity: "Tsg1Conductivity"
+      Salinity: "Tsg1Salinity"
+      SoundVelocity: "Tsg1SoundVelocity"
+
+  tsg_sbe45_fwd_2:
+    category: "device"
+    device_type: "TSG_SBE45"
+    description: "SBE45 thermosalinograph, secondary, wet wall"
+    fields:
+      Temp: "Tsg2Temp"
+      Conductivity: "Tsg2Conductivity"
+      Salinity: "Tsg2Salinity"
+      SoundVelocity: "Tsg2SoundVelocity"
+
+  thermo_sbe38_cb:
+    category: "device"
+    device_type: "SBE38"
+    description: "SBE38 remote temperature, centerboard"
+    fields:
+      Temp: "Sbe38CenterboardTemp"
+
+  thermo_sbe38_fwd:
+    category: "device"
+    device_type: "SBE38"
+    description: "SBE38 remote temperature, bow thruster room intake"
+    fields:
+      Temp: "Sbe38ForwardTemp"
+
+  # NOTE: 'ssv-aml-cb' and 'thermo_pyrometer-ct15' contain hyphens, which the
+  # default record_format "{data_id:w} {timestamp:ti} {field_string}" cannot
+  # match - ':w' is word characters only. Both spellings are defined so these
+  # work whether or not the loggers are renamed. See KNOWN ISSUES, item 2.
+  ssv-aml-cb:
+    category: "device"
+    device_type: "SVP"
+    description: "AML sound velocity sensor, centerboard"
+    fields:
+      Velocity: "SsvCenterboardSoundVelocity"
+
+  ssv_aml_cb:
+    category: "device"
+    device_type: "SVP"
+    description: "AML sound velocity sensor, centerboard (underscore alias)"
+    fields:
+      Velocity: "SsvCenterboardSoundVelocity"
+
+  thermo_pyrometer-ct15:
+    category: "device"
+    device_type: "SKQ_Pyrometer_CT15"
+    description: "Optris CT15.10 pyrometer, forward of SCR"
+    fields:
+      SurfaceTemp: "PyrometerSkinTemp"
+
+  thermo_pyrometer_ct15:
+    category: "device"
+    device_type: "SKQ_Pyrometer_CT15"
+    description: "Optris CT15.10 pyrometer, forward of SCR (underscore alias)"
+    fields:
+      SurfaceTemp: "PyrometerSkinTemp"
+
+  flow_krohne_fwd:
+    category: "device"
+    device_type: "SKQ_FlowKrohne"
+    description: "Krohne flow meter, wet wall"
+    fields:
+      FlowRate: "KrohneFwdFlowRate"
+      FlowVelocity: "KrohneFwdFlowVelocity"
+      FlowTemp: "KrohneFwdFlowTemp"
+      FlowTotalizer: "KrohneFwdFlowTotalizer"
+
+  flow_krohne_pco2:
+    category: "device"
+    device_type: "SKQ_FlowKrohne"
+    description: "Krohne flow meter, pCO2, wet lab"
+    fields:
+      FlowRate: "KrohnePco2FlowRate"
+      FlowVelocity: "KrohnePco2FlowVelocity"
+      FlowTemp: "KrohnePco2FlowTemp"
+      FlowTotalizer: "KrohnePco2FlowTotalizer"
+
+  tdgp:
+    category: "device"
+    device_type: "SKQ_TDGP"
+    description: "Total dissolved gas pressure, wet wall"
+    fields:
+      TDGPTemp: "TdgpTemp"
+      TDGPPressure: "TdgpPressure"
+      TDGPVoltage: "TdgpVoltage"
+
+  ##############################################################################
+  # OPTICS / RADIOMETRY / CHEMISTRY
+  ##############################################################################
+  fluoro_triplet_fwd:
+    category: "device"
+    device_type: "SKQ_FluoroTriplet"
+    description: "Sea-Bird ECO Triplet fluorometer, wet wall"
+    fields:
+      Value1: "FluoroFwdChannel1"
+      Value2: "FluoroFwdChannel2"
+      Value3: "FluoroFwdChannel3"
+      Thermistor: "FluoroFwdThermistor"
+
+  fluoro_triplet_ctd:
+    category: "device"
+    device_type: "SKQ_FluoroTriplet"
+    description: "Sea-Bird ECO Triplet fluorometer, CTD"
+    fields:
+      Value1: "FluoroCtdChannel1"
+      Value2: "FluoroCtdChannel2"
+      Value3: "FluoroCtdChannel3"
+      Thermistor: "FluoroCtdThermistor"
+
+  rad_sgr4:
+    category: "device"
+    device_type: "SKQ_Pyrgeometer_SGR4"
+    description: "Kipp & Zonen SGR4 pyrgeometer, above SCR"
+    fields:
+      LongwaveDown: "Sgr4LongwaveDown"
+      NetRadiation: "Sgr4NetRadiation"
+      BodyTemp: "Sgr4BodyTemp"
+      SupplyVoltage: "Sgr4SupplyVoltage"
+
+  rad_smp21:
+    category: "device"
+    device_type: "SKQ_Pyranometer_SMP21"
+    description: "Kipp & Zonen SMP21 pyranometer, above SCR"
+    fields:
+      ShortwaveDown: "Smp21ShortwaveDown"
+      BodyTemp: "Smp21BodyTemp"
+      SupplyVoltage: "Smp21SupplyVoltage"
+
+  rad_qsr2150a:
+    category: "device"
+    device_type: "SKQ_PAR_QSR2150A"
+    description: "Biospherical QSR-2150A PAR sensor, above SCR"
+    fields:
+      PAR: "Qsr2150aPAR"
+      SupplyVoltage: "Qsr2150aSupplyVoltage"
+
+  rain_org815ds:
+    category: "device"
+    device_type: "SKQ_RainORG815"
+    description: "Optical rain gauge, main mast"
+    fields:
+      RainRate: "RainRate"
+      RainAccumulation: "RainAccumulation"
+      Temp: "RainGaugeTemp"
+
+  met_met4a_fwdmast:
+    category: "device"
+    device_type: "SKQ_MET4A"
+    description: "Vaisala MET4A, flying bridge port"
+    fields:
+      Pressure: "Met4aPressure"
+      AirTemp: "Met4aAirTemp"
+      RelHumidity: "Met4aRelHumidity"
+
+  nitrate_suna_fwd:
+    category: "device"
+    device_type: "SKQ_Nitrate_SUNA"
+    description: "Sea-Bird SUNA nitrate sensor, wet wall"
+    fields:
+      Nitrate: "SunaNitrate"
+      NitrogenMg: "SunaNitrogenMg"
+      Absorbance254: "SunaAbsorbance254"
+      Absorbance350: "SunaAbsorbance350"
+
+  oxygen_optode4330:
+    category: "device"
+    device_type: "SKQ_Optode4330"
+    description: "Aanderaa Optode 4330, wet wall"
+    fields:
+      O2Concentration: "OptodeO2Concentration"
+      AirSaturation: "OptodeAirSaturation"
+      Temp: "OptodeTemp"
+
+  oxygen_optode4330_cor:
+    category: "device"
+    device_type: "SKQ_Optode4330_Cor"
+    description: "Salinity-corrected oxygen from Optode 4330"
+    fields:
+      O2Corrected: "OptodeO2Corrected"
+      O2Raw: "OptodeO2Raw"
+      AirSaturation: "OptodeCorAirSaturation"
+      Salinity: "OptodeCorSalinity"
+
+  pco2_ldeo_merge:
+    category: "device"
+    device_type: "PCO2_LDEO"
+    description: "LDEO pCO2 system plus ship data"
+    fields:
+      TimeTag: "Pco2TimeTag"
+      Voltage: "Pco2Voltage"
+      CellTemp: "Pco2CellTemp"
+      EquilPressure: "Pco2EquilPressure"
+      FlowRate: "Pco2FlowRate"
+      PCO2Pressure: "Pco2Pressure"
+      VCO2Concentration: "Pco2VCO2Concentration"
+      EquilTempRTD: "Pco2EquilTempRTD"
+      EquilTempSBE38: "Pco2EquilTempSBE38"
+      ValvePosition: "Pco2ValvePosition"
+      Source: "Pco2Source"
+
+  ##############################################################################
+  # OTHER
+  ##############################################################################
+  ais_bridge:
+    category: "device"
+    device_type: "AIS"
+    description: "Bridge AIS receiver"
+    fields:
+      NumMessages: "AisNumMessages"
+      MessageNum: "AisMessageNum"
+      NextMessage: "AisNextMessage"
+      Channel: "AisChannel"
+      Body: "AisBody"
+      FillBits: "AisFillBits"
+
+  grav_dgs_33_proc:
+    category: "device"
+    device_type: "SKQ_Grav_DGS"
+    description: "DGS AT1M gravimeter, processed"
+    fields:
+      RawGravity: "GravRawCounts"
+      GravityCorrected: "GravCorrectedCounts"
+
+  winch_rapp:
+    category: "device"
+    device_type: "Winch"
+    description: "RAPP winches (not broadcast on shipnet as of 2026-08)"
+    fields:
+      LANID: "WinchLANID"
+      WinchTime: "WinchTime"
+      Name: "WinchName"
+      Tension: "WinchTension"
+      Speed: "WinchSpeed"
+      Payout: "WinchPayout"
+
+################################################################################
+# KNOWN ISSUES / NOT YET DEFINED
+#
+# 1. DOUBLE-PREFIXED RECORDS. Records from the Raspberry Pi ports (531xx)
+#    already carry "<logger_id><TAB><timestamp><TAB>" ahead of the payload.
+#    When OpenRVDAS also prefixes the record, the parser is handed:
+#
+#      gyro_2  2026-...Z  gyro_mgc_2  2026-...Z  $MGTHS,287.75,A*15
+#
+#    and no format will match, because the field string starts with the
+#    sensor's own id rather than the sentence. Note also that the inner id
+#    does not always equal the OpenRVDAS logger name - the logger is
+#    'gyro_2' but the sensor writes 'gyro_mgc_2'.
+#
+#    Fix this in the logger config, not here: either read from the LDS ports
+#    (541xx), which are not double-prefixed, or strip the inner prefix with a
+#    RegexReplaceTransform ahead of ParseTransform. Defining the prefix away
+#    in this file would bake a transport quirk into the device definitions.
+#
+# 2. HYPHENATED DATA IDS CANNOT BE PARSED. The default record_format is
+#
+#      {data_id:w} {timestamp:ti} {field_string}
+#
+#    and ':w' matches word characters only - letters, digits and underscore,
+#    but NOT hyphens. So 'ssv-aml-cb' and 'thermo_pyrometer-ct15' fail before
+#    any device definition is consulted, producing:
+#
+#      Unable to parse record into "{data_id:w} {timestamp:ti} {field_string}"
+#
+#    Two ways out: rename those loggers to use underscores (both spellings are
+#    defined above, so nothing here needs to change), or pass an explicit
+#    record_format to ParseTransform whose data_id field tolerates hyphens,
+#    e.g. "{data_id:nc} {timestamp:ti} {field_string}". Renaming is simpler
+#    and keeps the ids consistent with the rest of the cruise definition.
+#
+# 3. ctd_sea_bird, met_met4a_scr, tsg_emssv, wave_wamos and mb_em2042 are
+#    listed on the ship's datagram page but had no sample output available,
+#    so they are deliberately not defined here rather than guessed at.
+#
+# 4. Several definitions are marked [PROVISIONAL] above: the record shape is
+#    right and they will parse, but individual field meanings are inferred
+#    from instrument model and units. Confirm against
+#      cruisedata:\SKQxxxx\lds\docs\format_descriptions_SKQ202x.txt
+#    before using those values scientifically.
+################################################################################

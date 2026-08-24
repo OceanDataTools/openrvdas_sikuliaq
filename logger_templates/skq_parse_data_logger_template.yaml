@@ -1,0 +1,87 @@
+###################
+# Sikuliaq parse_data logger template.
+#
+# Identical to contrib/logger_templates/parse_data_logger_template.yaml except
+# for one added transform ahead of ParseTransform.
+#
+# WHY THE EXTRA TRANSFORM
+# -----------------------
+# Sensors served by a Raspberry Pi (the 531xx ports) prepend their own logger
+# id and an ISO timestamp to the payload, tab-separated. The OpenRVDAS logger
+# then prefixes the record again, so ParseTransform is handed:
+#
+#   gnss_cnav 2026-08-23T23:06:15.6Z gnss_cnav<TAB>2026-08-23T23:05:45.4950Z<TAB>$GPVTG,...
+#
+# The outer prefix is consumed by the record_format, leaving the *inner* id
+# and timestamp sitting at the front of the field string, so no device format
+# can match and every record logs "No formats matched field_string".
+#
+# The RegexReplaceTransform below removes the inner id+timestamp pair when it
+# is present, and is a no-op for sensors that don't double-prefix (for example
+# wh300_xducer_depth and adcp_speedlog, which arrive as a bare sentence).
+#
+# The pattern anchors at the start of the record, captures the OpenRVDAS
+# prefix in group 1, and deletes a following "<id><separator><ISO timestamp>
+# <separator>".
+#
+# Two details matter:
+#
+#   - The inner id is matched loosely (\S*?) because it does not always equal
+#     the logger name, and may contain hyphens: logger 'gyro_2' emits
+#     'gyro_mgc_2', 'grav_dgs_33_proc' emits 'grav-dgs-33-proc'. This is also
+#     why the hyphens in the *incoming* data are harmless - the inner id is
+#     stripped before anything tries to parse it as a data id.
+#
+#   - The separator between inner id and timestamp is [ \t]* rather than
+#     [ \t]+, because at least one sensor emits them run together with no
+#     separator at all: "ssv_svp70_c2026-08-23T22:14:09.8569Z   1504.86".
+#
+# The anchor is the ISO timestamp, so records without an inner prefix are left
+# alone: a bare "$PMSG,5461*23" or "P 2026,08,23,..." contains no
+# YYYY-MM-DDThh:mm:ssZ and therefore does not match.
+#
+# Note the single-quoted YAML strings: the pattern contains backslashes that
+# must reach Python unescaped.
+###################
+logger_templates:
+  #################
+  skq_parse_data_logger_template:
+    configs:
+      'off': {}
+
+      'on': &skq_parse_data_on
+        readers:
+        - class: UDPReader
+          kwargs:
+            port: <<raw_udp_port>>
+        transforms:
+        # 1. Strip the sensor's own id+timestamp, if the record carries one.
+        # 2. Strip ASCII control characters. The Gill anemometer wraps its
+        #    payload in STX/ETX ("\x02A,337,011.47,M,60,\x030C"), and some
+        #    sensors leave a trailing CR. These are invisible in log output,
+        #    so the record looks fine while no format matches it.
+        #    The class deliberately spans \x00-\x08 and \x0b-\x1f, leaving TAB
+        #    (\x09) and LF (\x0a) alone - the fluorometer is tab-separated.
+        - class: RegexReplaceTransform
+          kwargs:
+            patterns:
+              '^(\S+\s+\d{4}-\d{2}-\d{2}T[\d:.]+Z\s+)\S*?[ \t]*\d{4}-\d{2}-\d{2}T[\d:.]+Z[ \t]*': '\1'
+              "[\\x00-\\x08\\x0b-\\x1f]": ''
+        - class: ParseTransform
+          kwargs:
+            metadata_interval: 10
+            definition_path: <<parse_definition_path>>
+        writers:
+        - class: CachedDataWriter
+          kwargs:
+            data_server: <<data_server>>
+
+      on+influx:
+        <<: *skq_parse_data_on
+        writers:
+        - class: CachedDataWriter
+          kwargs:
+            data_server: <<data_server>>
+        - class: InfluxDBWriter
+          kwargs:
+            bucket_name: <<influx_bucket_name>>

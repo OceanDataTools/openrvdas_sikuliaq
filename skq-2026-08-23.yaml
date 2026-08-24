@@ -1,0 +1,314 @@
+###########################################################
+###########################################################
+# YAML cruise definition file for OpenRVDAS.
+#
+# Created by:
+#   command:  <<command_line>>
+#   time:     <<date_time>>  UTC
+#   user:     <<user>>
+#
+###########################################################
+cruise:
+  id: <<cruise>>
+  start: '<<cruise_start>>'
+  end: '<<cruise_end>>'
+
+###########################################################
+includes:
+  - contrib/logger_templates/udp_logger_template.yaml
+  - local/sikuliaq/logger_templates/skq_parse_data_logger_template.yaml
+  - contrib/logger_templates/true_winds_logger_template.yaml
+  - contrib/logger_templates/snapshot_logger_template.yaml
+
+###########################################################
+# Global variables - can be overridden by individual loggers
+variables:
+  cruise: SKQ2026-07T
+  cruise_start: '2026-08-19'
+  cruise_end: '2026-08-30'
+
+  udp_destination: 255.255.255.255
+  raw_udp_port: 55150
+  parsed_udp_port: 55151
+
+  file_root: /var/tmp/log
+  parse_definition_path: local/sikuliaq/devices/skq_devices.yaml
+
+  data_server: localhost:55152
+  influx_bucket_name: openrvdas
+
+  user: rvdas
+
+###########################################################
+loggers:
+  adcp_speedlog:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53135
+  ais_bridge:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53134
+  ctd_sea_bird:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53113
+  flow_krohne_fwd:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53129
+  flow_krohne_pco2:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53116
+  fluoro_triplet_ctd:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53139
+  fluoro_triplet_fwd:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53138
+  gnss_cnav:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53121
+  gnss_mps865:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53120
+  grav_dgs_33_proc:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53149
+  gyro_1:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53122
+  gyro_2:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53123
+  ins_seapath_position:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53119
+  mb_em304_centerbeam:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 55005
+  mb_em710_centerbeam:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 55004
+  met_met4a_fwdmast:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53118
+  nitrate_suna_fwd:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53133
+  oxygen_optode4330:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53132
+  rad_qsr2150a:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53104
+  rad_sgr4:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53136
+  rad_smp21:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53137
+  rain_org815ds:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53102
+  sb_echosounder_1:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53126
+  sb_echosounder_2:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53127
+  speedlog:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53125
+  ssv_aml_cb:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53105
+  tdgp:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53147
+  thermo_pyrometer_ct15:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53106
+  thermo_sbe38_cb:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53107
+  thermo_sbe38_fwd:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53111
+  tsg_sbe45_fwd:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53110
+  tsg_sbe45_fwd_2:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53114
+  wh300_xducer_depth:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 55007
+  winch_rapp:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53128
+  wind_gill_fwdmast:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53124
+  wind_mast_port:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53130
+  wind_mast_stbd:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53131
+  wind_mast_stbd_true:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 54131
+  wind_metek_fwdmast:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 53145
+
+  # Reading from LDS for these sensors
+  fluoro_triplet_ctd_mrg:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 54139
+  ek80_depth:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 55006
+  oxygen_optode4330_cor:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 54132
+  pco2_ldeo_merge:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 54109
+  wind_gill_fwdmast_true:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 54124
+  wind_mast_port_true:
+    logger_template: udp_logger_template
+    variables:
+      reader_udp_port: 54130
+
+  # No port of any kind for these sensors
+  #wave_wamos	NMEA output from WAMOS	none	none
+  #tsg_emssv	Calculated SSV for EM304,710	none	none
+
+  # Parse raw UDP data and send to CDS, and optionally InfluxDB;
+  # uses default global variables
+  parse_data:
+    logger_template: skq_parse_data_logger_template
+
+###########################################################
+modes:
+  'off':  # without a 'default_mode' key, first defined mode will be default
+    [adcp_speedlog-off, ais_bridge-off, ctd_sea_bird-off, ek80_depth-off, flow_krohne_fwd-off, flow_krohne_pco2-off,
+     fluoro_triplet_ctd-off, fluoro_triplet_ctd_mrg-off, fluoro_triplet_fwd-off, gnss_cnav-off,
+     gnss_mps865-off, grav_dgs_33_proc-off, gyro_1-off, gyro_2-off, ins_seapath_position-off,
+     mb_em304_centerbeam-off, mb_em710_centerbeam-off, met_met4a_fwdmast-off, nitrate_suna_fwd-off,
+     oxygen_optode4330-off, oxygen_optode4330_cor-off, pco2_ldeo_merge-off, rad_qsr2150a-off,
+     rad_sgr4-off, rad_smp21-off, rain_org815ds-off, sb_echosounder_1-off, sb_echosounder_2-off,
+     speedlog-off, ssv_aml_cb-off, tdgp-off, thermo_pyrometer_ct15-off, thermo_sbe38_cb-off,
+     thermo_sbe38_fwd-off, tsg_sbe45_fwd-off, tsg_sbe45_fwd_2-off,
+     wh300_xducer_depth-off, winch_rapp-off, wind_gill_fwdmast-off, wind_gill_fwdmast_true-off,
+     wind_mast_port-off, wind_mast_port_true-off, wind_mast_stbd-off, wind_mast_stbd_true-off,
+     wind_metek_fwdmast-off,
+     # tsg_emssv-off, wave_wamos-off,
+     parse_data-off
+    ]
+
+  no_write:
+    [adcp_speedlog-net, ais_bridge-net, ctd_sea_bird-net, ek80_depth-net, flow_krohne_fwd-net, flow_krohne_pco2-net,
+     fluoro_triplet_ctd-net, fluoro_triplet_ctd_mrg-net, fluoro_triplet_fwd-net, gnss_cnav-net,
+     gnss_mps865-net, grav_dgs_33_proc-net, gyro_1-net, gyro_2-net, ins_seapath_position-net,
+     mb_em304_centerbeam-net, mb_em710_centerbeam-net, met_met4a_fwdmast-net, nitrate_suna_fwd-net,
+     oxygen_optode4330-net, oxygen_optode4330_cor-net, pco2_ldeo_merge-net, rad_qsr2150a-net,
+     rad_sgr4-net, rad_smp21-net, rain_org815ds-net, sb_echosounder_1-net, sb_echosounder_2-net,
+     speedlog-net, ssv_aml_cb-net, tdgp-net, thermo_pyrometer_ct15-net, thermo_sbe38_cb-net,
+     thermo_sbe38_fwd-net, tsg_sbe45_fwd-net, tsg_sbe45_fwd_2-net,
+     wh300_xducer_depth-net, winch_rapp-net, wind_gill_fwdmast-net, wind_gill_fwdmast_true-net,
+     wind_mast_port-net, wind_mast_port_true-net, wind_mast_stbd-net, wind_mast_stbd_true-net,
+     wind_metek_fwdmast-net,
+     # tsg_emssv-net, wave_wamos-net,
+     parse_data-on
+    ]
+
+  write:
+    [adcp_speedlog-net+file, ais_bridge-net+file, ctd_sea_bird-net+file, ek80_depth-net+file, flow_krohne_fwd-net+file, flow_krohne_pco2-net+file,
+     fluoro_triplet_ctd-net+file, fluoro_triplet_ctd_mrg-net+file, fluoro_triplet_fwd-net+file, gnss_cnav-net+file,
+     gnss_mps865-net+file, grav_dgs_33_proc-net+file, gyro_1-net+file, gyro_2-net+file, ins_seapath_position-net+file,
+     mb_em304_centerbeam-net+file, mb_em710_centerbeam-net+file, met_met4a_fwdmast-net+file, nitrate_suna_fwd-net+file,
+     oxygen_optode4330-net+file, oxygen_optode4330_cor-net+file, pco2_ldeo_merge-net+file, rad_qsr2150a-net+file,
+     rad_sgr4-net+file, rad_smp21-net+file, rain_org815ds-net+file, sb_echosounder_1-net+file, sb_echosounder_2-net+file,
+     speedlog-net+file, ssv_aml_cb-net+file, tdgp-net+file, thermo_pyrometer_ct15-net+file, thermo_sbe38_cb-net+file,
+     thermo_sbe38_fwd-net+file, tsg_sbe45_fwd-net+file, tsg_sbe45_fwd_2-net+file,
+     wh300_xducer_depth-net+file, winch_rapp-net+file, wind_gill_fwdmast-net+file, wind_gill_fwdmast_true-net+file,
+     wind_mast_port-net+file, wind_mast_port_true-net+file, wind_mast_stbd-net+file, wind_mast_stbd_true-net+file,
+     wind_metek_fwdmast-net+file,
+     # tsg_emssv-net+file, wave_wamos-net+file,
+     parse_data-on
+    ]
+
+  no_write+influx:
+    [adcp_speedlog-net, ais_bridge-net, ctd_sea_bird-net, ek80_depth-net, flow_krohne_fwd-net, flow_krohne_pco2-net,
+     fluoro_triplet_ctd-net, fluoro_triplet_ctd_mrg-net, fluoro_triplet_fwd-net, gnss_cnav-net,
+     gnss_mps865-net, grav_dgs_33_proc-net, gyro_1-net, gyro_2-net, ins_seapath_position-net,
+     mb_em304_centerbeam-net, mb_em710_centerbeam-net, met_met4a_fwdmast-net, nitrate_suna_fwd-net,
+     oxygen_optode4330-net, oxygen_optode4330_cor-net, pco2_ldeo_merge-net, rad_qsr2150a-net,
+     rad_sgr4-net, rad_smp21-net, rain_org815ds-net, sb_echosounder_1-net, sb_echosounder_2-net,
+     speedlog-net, ssv_aml_cb-net, tdgp-net, thermo_pyrometer_ct15-net, thermo_sbe38_cb-net,
+     thermo_sbe38_fwd-net, tsg_sbe45_fwd-net, tsg_sbe45_fwd_2-net,
+     wh300_xducer_depth-net, winch_rapp-net, wind_gill_fwdmast-net, wind_gill_fwdmast_true-net,
+     wind_mast_port-net, wind_mast_port_true-net, wind_mast_stbd-net, wind_mast_stbd_true-net,
+     wind_metek_fwdmast-net,
+     # tsg_emssv-net, wave_wamos-net,
+     parse_data-on+influx
+    ]
+  write+influx:
+    [adcp_speedlog-net+file, ais_bridge-net+file, ctd_sea_bird-net+file, ek80_depth-net+file, flow_krohne_fwd-net+file, flow_krohne_pco2-net+file,
+     fluoro_triplet_ctd-net+file, fluoro_triplet_ctd_mrg-net+file, fluoro_triplet_fwd-net+file, gnss_cnav-net+file,
+     gnss_mps865-net+file, grav_dgs_33_proc-net+file, gyro_1-net+file, gyro_2-net+file, ins_seapath_position-net+file,
+     mb_em304_centerbeam-net+file, mb_em710_centerbeam-net+file, met_met4a_fwdmast-net+file, nitrate_suna_fwd-net+file,
+     oxygen_optode4330-net+file, oxygen_optode4330_cor-net+file, pco2_ldeo_merge-net+file, rad_qsr2150a-net+file,
+     rad_sgr4-net+file, rad_smp21-net+file, rain_org815ds-net+file, sb_echosounder_1-net+file, sb_echosounder_2-net+file,
+     speedlog-net+file, ssv_aml_cb-net+file, tdgp-net+file, thermo_pyrometer_ct15-net+file, thermo_sbe38_cb-net+file,
+     thermo_sbe38_fwd-net+file, tsg_sbe45_fwd-net+file, tsg_sbe45_fwd_2-net+file,
+     wh300_xducer_depth-net+file, winch_rapp-net+file, wind_gill_fwdmast-net+file, wind_gill_fwdmast_true-net+file,
+     wind_mast_port-net+file, wind_mast_port_true-net+file, wind_mast_stbd-net+file, wind_mast_stbd_true-net+file,
+     wind_metek_fwdmast-net+file,
+     # tsg_emssv-net+file, wave_wamos-net+file,
+     parse_data-on+influx]
