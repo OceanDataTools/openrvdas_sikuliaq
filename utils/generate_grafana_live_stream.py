@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Generates an OpenRVDAS logger configuration for Grafana Live streaming based on Coriolix sensor metadata.
-Also provides the CoriolixSensorConfig class for use by other scripts.
+Generates an OpenRVDAS logger configuration for Grafana Live streaming based on
+Coriolix sensor metadata. Also provides the CoriolixSensorConfig class for use
+by other scripts.
 
 Usage:
     ./generate_grafana_live_stream.py <sensor_id_or_slug> [--grafana_url URL] [--api_url URL]
@@ -102,19 +103,23 @@ class CoriolixSensorConfig:
         # 1. Look for literal \W followed by ID (e.g. \WMGHDT, \WPSXN)
         # Matches literal backslash, then W, then the ID.
         match = re.search(r'\\W([A-Z0-9]+)', regex_str)
-        if match: return match.group(1)
+        if match:
+            return match.group(1)
 
         # 2. Look for literal \$ followed by ID (e.g. \$GPGGA)
         match = re.search(r'\\\$([A-Z0-9]+)', regex_str)
-        if match: return match.group(1)
+        if match:
+            return match.group(1)
 
         # 3. Look for literal ! followed by ID (e.g. !AIVDO for AIS)
         match = re.search(r'!([A-Z0-9]+)', regex_str)
-        if match: return match.group(1)
+        if match:
+            return match.group(1)
 
         # 4. Fallback: If it starts with ^ID (rare, but possible for simple formats)
         match = re.search(r'^\^([A-Z0-9]+)', regex_str)
-        if match: return match.group(1)
+        if match:
+            return match.group(1)
 
         return 'unknown'
 
@@ -137,7 +142,8 @@ class CoriolixSensorConfig:
         sys.stderr.write(f"Scanning {len(all_sensors)} sensors from API...\n")
 
         for s in all_sensors:
-            if not isinstance(s, dict): continue
+            if not isinstance(s, dict):
+                continue
 
             # 1. Check Enabled (Robust boolean check)
             val = s.get('enabled')
@@ -198,7 +204,9 @@ class CoriolixSensorConfig:
         # --- Extract Configuration ---
 
         # The 'data_id' we want to use in the config is the slug
-        data_id = sensor_info.get('slug') or sensor_info.get('short_name') or sensor_info.get('sensor_id')
+        data_id = (sensor_info.get('slug') or
+                   sensor_info.get('short_name') or
+                   sensor_info.get('sensor_id'))
 
         # The hardware ID is needed for the secondary parameter lookup
         hardware_id = sensor_info.get('sensor_id')
@@ -261,7 +269,6 @@ class CoriolixSensorConfig:
             param_list = []
 
         fields_map = {}
-        lat_lon_fields = {}
         api_param_names = set()
 
         for obj in param_list:
@@ -277,12 +284,21 @@ class CoriolixSensorConfig:
         regex_field_names = self._extract_regex_groups(pattern_list)
         all_known_fields = api_param_names.union(regex_field_names)
 
-        # Detect Lat/Lon pairs
+        # Detect Lat/Lon pairs and configure declarative NMEA conversion
         for name in list(all_known_fields):
             if name.endswith('_dir'):
                 base_name = name[:-4]
                 if base_name in all_known_fields:
-                    lat_lon_fields[base_name] = FlowList([base_name, name])
+                    # Determine type based on name heuristic
+                    new_type = 'nmea_lon' if 'lon' in base_name.lower() else 'nmea_lat'
+
+                    # Ensure we have a config dict for this field
+                    if base_name not in fields_map:
+                        fields_map[base_name] = {}
+
+                    # Update config with declarative NMEA metadata
+                    fields_map[base_name]['data_type'] = new_type
+                    fields_map[base_name]['direction_field'] = name
 
         return {
             'sensor_id': data_id,  # This is the Slug/Data ID
@@ -291,8 +307,7 @@ class CoriolixSensorConfig:
             'convert_fields_transform_kwargs': {
                 'delete_source_fields': True,
                 'delete_unconverted_fields': True,
-                'fields': fields_map,
-                **({'lat_lon_fields': lat_lon_fields} if lat_lon_fields else {})
+                'fields': fields_map
             }
         }
 
@@ -305,7 +320,8 @@ if __name__ == '__main__':
         description="Generates an OpenRVDAS logger configuration for Grafana Live streaming."
     )
     parser.add_argument('sensor_id', help="The Coriolix Sensor Slug or ID (e.g., gnss_cnav)")
-    parser.add_argument('--grafana_url', default='http://localhost:3000', help="Full URL for Grafana Live")
+    parser.add_argument('--grafana_url', default='http://localhost:3000',
+                        help="Full URL for Grafana Live")
     parser.add_argument('--api_url', default=None, help="Base URL for Coriolix API")
 
     args = parser.parse_args()
@@ -353,4 +369,6 @@ if __name__ == '__main__':
 # Date: {date_str}
 
 """
-        print(header + yaml.dump(logger_config, sort_keys=False, default_flow_style=False))
+        print(header + yaml.dump(logger_config,
+                                 sort_keys=False,
+                                 default_flow_style=False))

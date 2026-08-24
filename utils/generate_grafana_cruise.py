@@ -24,7 +24,8 @@ import yaml
 try:
     from generate_grafana_live_stream import CoriolixSensorConfig, QuotedString, FlowList
 except ImportError:
-    sys.exit("Error: Could not import 'CoriolixSensorConfig' from 'generate_grafana_live_stream.py'.")
+    sys.exit("Error: Could not import 'CoriolixSensorConfig' from "
+             "'generate_grafana_live_stream.py'.")
 
 try:
     from generate_id_mapping import SensorIDMapper
@@ -33,9 +34,11 @@ except ImportError:
 
 # Register helpers so the cruise generator outputs correct YAML
 yaml.add_representer(QuotedString,
-                     lambda dumper, data: dumper.represent_scalar('tag:yaml.org,2002:str', data, style="'"))
+                     lambda dumper, data: dumper.represent_scalar('tag:yaml.org,2002:str',
+                                                                  data, style="'"))
 yaml.add_representer(FlowList,
-                     lambda dumper, data: dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True))
+                     lambda dumper, data: dumper.represent_sequence('tag:yaml.org,2002:seq',
+                                                                    data, flow_style=True))
 
 
 class GrafanaCruiseGenerator:
@@ -65,7 +68,8 @@ class GrafanaCruiseGenerator:
                     sys.stderr.write(f"Error reading mapping file: {e}\n")
                     return {}
             else:
-                sys.stderr.write(f"Warning: Mapping file {mapping_file} not found. Proceeding without mapping.\n")
+                sys.stderr.write(f"Warning: Mapping file {mapping_file} not found. "
+                                 "Proceeding without mapping.\n")
                 return {}
         else:
             sys.stderr.write("No mapping file provided. Scanning network for active Data IDs...\n")
@@ -101,7 +105,8 @@ class GrafanaCruiseGenerator:
                             'transforms': [
                                 {
                                     'class': 'RegexTransform',
-                                    'module': 'local.sikuliaq.coriolix.logger.transforms.regex_transform',
+                                    'module': ('local.sikuliaq.coriolix.logger.transforms.'
+                                               'regex_transform'),
                                     'kwargs': '<<regex_transform_kwargs>>'
                                 },
                                 {
